@@ -1,49 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import * as XLSX from "xlsx";
-
-// ─────────────────────────────────────────────────────────────
-//  STORAGE  (Supabase-ready stubs — swap window.storage calls
-//  for supabase.from(...) equivalents when deploying to prod)
-// ─────────────────────────────────────────────────────────────
-const DB_KEY_PREFIX = "parcelcomp_comps_v1_chunk_";
-const DB_META_KEY   = "parcelcomp_comps_v1_meta";
-const CHUNK_SIZE    = 200;
-
-const STRIP_FIELDS = new Set([
-  "tracts","fmvFlags","propertyClassDesc","propertyCategory","taxDistrictName",
-  "allAddresses","allClassCodes","sellerAddress","buyerAddress","preparerAddress","preparerCompany",
-]);
-function stripForStorage(comp) {
-  const lean = {};
-  for (const [k, v] of Object.entries(comp)) { if (!STRIP_FIELDS.has(k)) lean[k] = v; }
-  return lean;
-}
-
-const NOTES_PREFIX = "parcelcomp_note_v1_";
-async function loadNote(sdfId) {
-  if (!sdfId) return [];
-  try { const r = await window.storage.get(NOTES_PREFIX+sdfId, true); return r ? JSON.parse(r.value) : []; } catch { return []; }
-}
-async function saveNote(sdfId, notes) {
-  try { await window.storage.set(NOTES_PREFIX+sdfId, JSON.stringify(notes), true); } catch(e) { console.error(e); }
-}
-async function loadAllNotes(sdfIds) {
-  const map = {};
-  await Promise.all([...new Set(sdfIds.filter(Boolean))].map(async id => {
-    const n = await loadNote(id); if (n.length) map[id] = n;
-  }));
-  return map;
-}
-
-const IMPORT_LOG_KEY = "parcelcomp_import_log_v1";
-async function loadImportLog() {
-  try { const r = await window.storage.get(IMPORT_LOG_KEY, true); return r ? JSON.parse(r.value) : []; } catch { return []; }
-}
-async function appendImportLog(entry) {
-  const log = await loadImportLog();
-  log.unshift(entry);
-  try { await window.storage.set(IMPORT_LOG_KEY, JSON.stringify(log.slice(0,50)), true); } catch{}
-}
+import { loadDB, saveDB, clearDB, loadAllNotes, insertNote, deleteNoteById, loadImportLog, appendImportLog } from './db';
 
 // ─────────────────────────────────────────────────────────────
 //  INDIANA REFERENCE DATA
@@ -317,28 +274,6 @@ function rehydrateComp(comp) {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  DB LAYER
-// ─────────────────────────────────────────────────────────────
-async function saveDB(rows) {
-  const lean=rows.map(stripForStorage);
-  const chunks=[];
-  for(let i=0;i<lean.length;i+=CHUNK_SIZE) chunks.push(lean.slice(i,i+CHUNK_SIZE));
-  for(let i=0;i<chunks.length;i++) await window.storage.set(DB_KEY_PREFIX+i,JSON.stringify(chunks[i]),true);
-  await window.storage.set(DB_META_KEY,JSON.stringify({chunks:chunks.length,total:lean.length,savedAt:new Date().toISOString()}));
-  for(let i=chunks.length;i<chunks.length+20;i++){try{await window.storage.delete(DB_KEY_PREFIX+i,true);}catch{}}
-}
-async function loadDB() {
-  try{
-    const metaR=await window.storage.get(DB_META_KEY,true);
-    if(!metaR)return[];
-    const meta=JSON.parse(metaR.value);
-    const rows=[];
-    for(let i=0;i<meta.chunks;i++){const r=await window.storage.get(DB_KEY_PREFIX+i,true).catch(()=>null);if(r)rows.push(...JSON.parse(r.value).map(rehydrateComp));}
-    return rows;
-  }catch{return[];}
-}
-
-// ─────────────────────────────────────────────────────────────
 //  PARSE / NORMALIZE / CONSOLIDATE
 // ─────────────────────────────────────────────────────────────
 async function parseFile(file){
@@ -513,40 +448,17 @@ function exportCSV(comps,notesMap={}){
 }
 
 // ─────────────────────────────────────────────────────────────
-//  DESIGN TOKENS — CRE Consulting / ParcelComp palette
-//  Navy + warm white + gold accent, professional CRE aesthetic
+//  DESIGN TOKENS
 // ─────────────────────────────────────────────────────────────
 const T = {
-  // Backgrounds
-  bg:         "#f4f2ee",   // warm off-white — feels like paper/professional
-  surface:    "#ffffff",
-  surfaceAlt: "#f9f7f4",
-  navy:       "#1a2744",   // deep navy — primary brand
-  navyMid:    "#243358",
-  navyLight:  "#2e4070",
-  navyTint:   "#eaecf2",   // very light navy for row stripes
-  // Accents
-  gold:       "#b8932a",   // muted gold — CRE professional
-  goldLight:  "#d4a83a",
-  goldBg:     "#fdf8ee",
-  // Text
-  text:       "#1a2032",
-  textMid:    "#3d4a62",
-  textLight:  "#6b7a96",
-  textFaint:  "#9aa3b5",
-  // Borders
-  border:     "#d8dae2",
-  borderMid:  "#c4c8d5",
-  // Status
-  flagRed:    "#b53a3a",
-  flagBg:     "#fdf2f2",
-  flagBorder: "#e8c4c4",
-  warnAmber:  "#b87a1a",
-  warnBg:     "#fdf8f0",
-  warnBorder: "#e8d4b0",
-  okGreen:    "#2a6b44",
-  okBg:       "#f2faf5",
-  okBorder:   "#b0d8c0",
+  bg:"#f4f2ee",surface:"#ffffff",surfaceAlt:"#f9f7f4",
+  navy:"#1a2744",navyMid:"#243358",navyLight:"#2e4070",navyTint:"#eaecf2",
+  gold:"#b8932a",goldLight:"#d4a83a",goldBg:"#fdf8ee",
+  text:"#1a2032",textMid:"#3d4a62",textLight:"#6b7a96",textFaint:"#9aa3b5",
+  border:"#d8dae2",borderMid:"#c4c8d5",
+  flagRed:"#b53a3a",flagBg:"#fdf2f2",flagBorder:"#e8c4c4",
+  warnAmber:"#b87a1a",warnBg:"#fdf8f0",warnBorder:"#e8d4b0",
+  okGreen:"#2a6b44",okBg:"#f2faf5",okBorder:"#b0d8c0",
 };
 
 const APP_CSS=`
@@ -572,11 +484,10 @@ textarea:focus,input:focus{outline:2px solid ${T.gold}!important;outline-offset:
 // ─────────────────────────────────────────────────────────────
 //  HEADER
 // ─────────────────────────────────────────────────────────────
-function Header({allComps,stats,exportMode,setExportMode,clearSelection,selectedIds,exportLoading,exportMD26,setShowImport,setShowSettings,showAdmin,setShowAdmin,daysSinceLastImport}){
+function Header({allComps,stats,exportMode,setExportMode,clearSelection,selectedIds,exportLoading,exportMD26,setShowImport,setShowSettings,showAdmin,setShowAdmin,daysSinceLastImport,onLogout}){
   return(
     <header style={{background:T.navy,color:"#fff",height:"58px",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 28px",position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 12px rgba(20,30,60,0.18)"}}>
       <div style={{display:"flex",alignItems:"center",gap:"20px"}}>
-        {/* Wordmark */}
         <div style={{display:"flex",flexDirection:"column",lineHeight:1,cursor:"default"}} onClick={()=>setShowAdmin(v=>!v)}>
           <div style={{display:"flex",alignItems:"baseline",gap:"2px"}}>
             <span style={{fontFamily:"Merriweather,serif",fontWeight:700,fontSize:"20px",letterSpacing:"-0.02em",color:"#fff"}}>Parcel</span>
@@ -586,7 +497,6 @@ function Header({allComps,stats,exportMode,setExportMode,clearSelection,selected
             {showAdmin?"Admin Mode · ":""}CRE Consulting · Indiana SDF
           </span>
         </div>
-        {/* Live indicator */}
         {allComps.length>0&&(
           <div style={{display:"flex",alignItems:"center",gap:"8px",borderLeft:"1px solid rgba(255,255,255,0.15)",paddingLeft:"20px"}}>
             <div className="pulse" style={{width:7,height:7,borderRadius:"50%",background:"#5dba7d"}}/>
@@ -620,6 +530,10 @@ function Header({allComps,stats,exportMode,setExportMode,clearSelection,selected
           style={{background:"rgba(255,255,255,0.08)",color:"rgba(255,255,255,0.6)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:"5px",padding:"6px 14px",fontFamily:"Lato,sans-serif",fontSize:"12px",cursor:"pointer"}}>
           Settings
         </button>
+        <button onClick={onLogout}
+          style={{background:"rgba(255,255,255,0.08)",color:"rgba(255,255,255,0.6)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:"5px",padding:"6px 14px",fontFamily:"Lato,sans-serif",fontSize:"12px",cursor:"pointer"}}>
+          Sign Out
+        </button>
       </div>
     </header>
   );
@@ -628,7 +542,7 @@ function Header({allComps,stats,exportMode,setExportMode,clearSelection,selected
 // ─────────────────────────────────────────────────────────────
 //  MAIN APP
 // ─────────────────────────────────────────────────────────────
-export default function App(){
+export default function App({ session, onLogout }){
   const [allComps,setAllComps]=useState([]);
   const [filtered,setFiltered]=useState([]);
   const [loading,setLoading]=useState(true);
@@ -655,7 +569,6 @@ export default function App(){
   const [showNoteFor,setShowNoteFor]=useState(null);
   const [importLog,setImportLog]=useState([]);
   const fileRef=useRef();
-  const settingsKey="parcelcomp_settings_v1";
 
   const showToast=(msg,type="success")=>{setToast({msg,type});setTimeout(()=>setToast(null),4500);};
 
@@ -664,17 +577,26 @@ export default function App(){
     return()=>{document.head.removeChild(el);};
   },[]);
 
+  // ── LOAD DATA ON MOUNT ──────────────────────────────────────
   useEffect(()=>{
-    Promise.all([loadDB(),window.storage.get(settingsKey).catch(()=>null),loadImportLog()]).then(async([rows,settingsR,log])=>{
-      setAllComps(rows);setFiltered(rows);
-      if(settingsR)try{const s=JSON.parse(settingsR.value);setGoogleApiKey(s.googleApiKey||"");}catch{}
-      setImportLog(log||[]);
-      if(rows.length){const nm=await loadAllNotes(rows.map(r=>r.sdfId));setNotesMap(nm);}
-      setLoading(false);
-    });
+    Promise.all([loadDB(), loadImportLog()])
+      .then(async([rows, log])=>{
+        setAllComps(rows);
+        setFiltered(rows);
+        setImportLog(log||[]);
+        if(rows.length){
+          const nm=await loadAllNotes(rows.map(r=>r.sdfId));
+          setNotesMap(nm);
+        }
+        setLoading(false);
+      })
+      .catch(err=>{
+        console.error("Load error:",err);
+        setLoading(false);
+      });
   },[]);
 
-  // ADMIN ONLY: import handler
+  // ── IMPORT HANDLER (ADMIN ONLY) ─────────────────────────────
   const handleFiles=useCallback(async(files)=>{
     const file=files[0];if(!file)return;
     setImporting(true);
@@ -685,9 +607,13 @@ export default function App(){
       const newComps=consolidated.filter(c=>!c.sdfId||!existingIds.has(c.sdfId));
       const dupeCount=consolidated.length-newComps.length;
       const updated=[...allComps,...newComps];
-      setAllComps(updated);setFiltered(updated);await saveDB(updated);
+      // Rehydrate before saving to state
+      const rehydrated=updated.map(rehydrateComp);
+      setAllComps(rehydrated);setFiltered(rehydrated);
+      await saveDB(newComps);
       const logEntry={fileName:file.name,importedAt:new Date().toISOString(),newCount:newComps.length,dupeCount,totalInFile:consolidated.length};
-      await appendImportLog(logEntry);setImportLog(prev=>[logEntry,...prev].slice(0,50));
+      await appendImportLog(logEntry);
+      setImportLog(prev=>[logEntry,...prev].slice(0,50));
       showToast(`${newComps.length} transactions added${dupeCount>0?" · "+dupeCount+" duplicates skipped":""} from ${file.name}`);
     }catch(e){showToast("Import failed: "+e.message,"error");}
     setImporting(false);
@@ -702,28 +628,46 @@ export default function App(){
     catch(e){showToast(e.message,"error");}
     setAiLoading(false);
   };
+
   const clearFilter=()=>{setFiltered(allComps);setQuery("");setFilterMeta(null);setFmvFilter("all");};
+
   const clearAllData=async()=>{
-    if(!confirm("Remove all transaction data from the database? This cannot be undone."))return;
-    setAllComps([]);setFiltered([]);setFilterMeta(null);setFmvFilter("all");
-    await saveDB([]);showToast("Database cleared");
+    if(!confirm("Remove all transaction data? This cannot be undone."))return;
+    try{
+      await clearDB();
+      setAllComps([]);setFiltered([]);setFilterMeta(null);setFmvFilter("all");
+      showToast("Database cleared");
+    }catch(e){showToast("Failed to clear database: "+e.message,"error");}
   };
 
-  // Notes — read-only for regular users, write-capable for all authenticated
+  // ── NOTES ───────────────────────────────────────────────────
   const openNote=(comp)=>{setShowNoteFor(comp.id);setNoteInput({id:comp.sdfId,text:"",author:"",verified:false});};
+
   const submitNote=async()=>{
     if(!noteInput.text.trim()||!noteInput.id)return;
-    const newNote={text:noteInput.text.trim(),author:noteInput.author.trim()||"Anonymous",timestamp:new Date().toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}),verified:noteInput.verified};
-    const updated=[...(notesMap[noteInput.id]||[]),newNote];
-    await saveNote(noteInput.id,updated);
-    setNotesMap(prev=>({...prev,[noteInput.id]:updated}));
-    setNoteInput({id:null,text:"",author:"",verified:false});setShowNoteFor(null);
-    showToast(newNote.verified?"Verification saved and shared with team":"Note saved and shared with team");
+    try{
+      const newRow=await insertNote(noteInput.id,noteInput.text.trim(),noteInput.author.trim()||"Anonymous",noteInput.verified);
+      const formatted={
+        id:newRow.id,text:newRow.text,author:newRow.author,verified:newRow.verified,
+        timestamp:new Date(newRow.created_at).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})
+      };
+      setNotesMap(prev=>({...prev,[noteInput.id]:[...(prev[noteInput.id]||[]),formatted]}));
+      setNoteInput({id:null,text:"",author:"",verified:false});setShowNoteFor(null);
+      showToast(noteInput.verified?"Verification saved and shared with team":"Note saved and shared with team");
+    }catch(e){showToast("Failed to save note: "+e.message,"error");}
   };
-  const deleteNote=async(sdfId,idx)=>{
+
+  const deleteNote=async(sdfId,noteId)=>{
     if(!confirm("Delete this note?"))return;
-    const updated=(notesMap[sdfId]||[]).filter((_,i)=>i!==idx);
-    await saveNote(sdfId,updated);setNotesMap(prev=>({...prev,[sdfId]:updated}));
+    try{
+      await deleteNoteById(noteId);
+      setNotesMap(prev=>({...prev,[sdfId]:(prev[sdfId]||[]).filter(n=>n.id!==noteId)}));
+    }catch(e){showToast("Failed to delete note: "+e.message,"error");}
+  };
+
+  const saveSettings=async(key)=>{
+    setGoogleApiKey(key);
+    showToast("Settings saved");
   };
 
   const daysSinceLastImport=importLog.length?Math.floor((Date.now()-new Date(importLog[0].importedAt).getTime())/(1000*60*60*24)):null;
@@ -758,7 +702,6 @@ export default function App(){
   const stats=calcStats(filtered);
   const catDist=filtered.reduce((acc,c)=>{acc[c.propertyCategory]=(acc[c.propertyCategory]||0)+1;return acc;},{});
   const topCats=Object.entries(catDist).sort((a,b)=>b[1]-a[1]);
-
   const Divider=()=><div style={{width:"1px",height:"18px",background:T.border}}/>;
 
   return(
@@ -766,11 +709,12 @@ export default function App(){
       <Header allComps={allComps} stats={stats} exportMode={exportMode} setExportMode={setExportMode}
         clearSelection={clearSelection} selectedIds={selectedIds} exportLoading={exportLoading}
         exportMD26={exportMD26} setShowImport={setShowImport} setShowSettings={setShowSettings}
-        showAdmin={showAdmin} setShowAdmin={setShowAdmin} daysSinceLastImport={daysSinceLastImport}/>
+        showAdmin={showAdmin} setShowAdmin={setShowAdmin} daysSinceLastImport={daysSinceLastImport}
+        onLogout={onLogout}/>
 
       <div style={{maxWidth:"1540px",margin:"0 auto",padding:"20px 24px"}}>
 
-        {/* ── SEARCH BAR ── */}
+        {/* SEARCH BAR */}
         <div style={{marginBottom:"14px"}}>
           <div style={{display:"flex",gap:"0",alignItems:"stretch",background:T.surface,border:"1px solid "+T.border,borderRadius:"7px",overflow:"hidden",boxShadow:"0 1px 4px rgba(20,30,60,0.06)"}}>
             <div style={{background:T.navy,display:"flex",alignItems:"center",padding:"0 14px"}}>
@@ -787,7 +731,6 @@ export default function App(){
             </button>
           </div>
 
-          {/* Quick filters */}
           <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginTop:"8px",alignItems:"center"}}>
             <span style={{color:T.textFaint,fontSize:"11px",marginRight:"2px"}}>Quick:</span>
             {[["Vacant Land","vacant unimproved land"],["Agricultural","agricultural"],["Arm's Length","arms length only"],["30+ Acres","more than 30 acres"],["Since 2023","after 2023"],["Commercial","commercial"],["Flagged","flagged non-arms length"]].map(([label,val])=>(
@@ -797,7 +740,6 @@ export default function App(){
               </button>
             ))}
             <div style={{flex:1}}/>
-            {/* FMV quick filter */}
             <span style={{color:T.textFaint,fontSize:"11px"}}>FMV:</span>
             {[["all","All",[T.navy,T.navy,T.navyTint]],["clean","✓ "+stats.clean,[T.okGreen,T.okBorder,T.okBg]],["warn","? "+stats.warned,[T.warnAmber,T.warnBorder,T.warnBg]],["flag","⚠ "+stats.flagged,[T.flagRed,T.flagBorder,T.flagBg]]].map(([val,label,[color,border,bg]])=>(
               <button key={val} onClick={()=>setFmvFilter(val)}
@@ -807,7 +749,6 @@ export default function App(){
             ))}
           </div>
 
-          {/* Active filter strip */}
           {(filterMeta||fmvFilter!=="all")&&(
             <div style={{display:"flex",gap:"6px",flexWrap:"wrap",marginTop:"8px",alignItems:"center",background:T.goldBg,border:"1px solid "+T.warnBorder,borderRadius:"6px",padding:"6px 12px"}}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.gold} strokeWidth="2.5"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
@@ -819,7 +760,7 @@ export default function App(){
           )}
         </div>
 
-        {/* ── LOADING ── */}
+        {/* LOADING */}
         {loading&&(
           <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"50vh",gap:"16px"}}>
             <div className="spin" style={{fontSize:"32px",color:T.navy}}>↻</div>
@@ -827,7 +768,7 @@ export default function App(){
           </div>
         )}
 
-        {/* ── EMPTY STATE ── */}
+        {/* EMPTY STATE */}
         {!loading&&allComps.length===0&&(
           <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"55vh",textAlign:"center",animation:"fadeUp 0.5s ease"}}>
             <div style={{width:"64px",height:"64px",background:T.navyTint,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",marginBottom:"20px"}}>
@@ -847,7 +788,7 @@ export default function App(){
           </div>
         )}
 
-        {/* ── TABS ── */}
+        {/* TABS */}
         {allComps.length>0&&(
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",borderBottom:"2px solid "+T.border,marginBottom:"16px"}}>
             <div style={{display:"flex",gap:"0"}}>
@@ -875,7 +816,7 @@ export default function App(){
           </div>
         )}
 
-        {/* ── TRANSACTIONS TABLE ── */}
+        {/* TRANSACTIONS TABLE */}
         {activeTab==="comps"&&allComps.length>0&&(
           <div style={{animation:"fadeUp 0.3s ease",borderRadius:"7px",border:"1px solid "+T.border,overflow:"hidden",boxShadow:"0 2px 8px rgba(20,30,60,0.05)"}}>
             <div style={{overflowX:"auto"}}>
@@ -901,7 +842,6 @@ export default function App(){
                           onClick={()=>exportMode?toggleSelect(c.id):setExpandedRow(expandedRow===c.id?null:c.id)}
                           style={{background:rowBg,borderBottom:"1px solid "+T.border,transition:"background 0.1s"}}>
                           {exportMode&&<td style={{padding:"9px 12px"}} onClick={e=>{e.stopPropagation();toggleSelect(c.id);}}><input type="checkbox" checked={isSelected} onChange={()=>toggleSelect(c.id)}/></td>}
-                          {/* Status */}
                           <td style={{padding:"9px 13px",width:"90px"}}>
                             {c.fmvBadge==="flag"
                               ?<span title={(c.fmvFlags||[]).map(f=>f.reason).join("\n")} style={{background:T.flagBg,border:"1px solid "+T.flagBorder,color:T.flagRed,borderRadius:"4px",padding:"2px 8px",fontSize:"10px",fontWeight:700,whiteSpace:"nowrap",cursor:"help",letterSpacing:"0.04em"}}>⚠ FLAG</span>
@@ -911,7 +851,6 @@ export default function App(){
                             }
                             {(notesMap[c.sdfId]||[]).length>0&&<div style={{color:T.navy,fontSize:"9px",marginTop:"3px",fontWeight:600}}>📝 {(notesMap[c.sdfId]||[]).length} note{(notesMap[c.sdfId]||[]).length>1?"s":""}</div>}
                           </td>
-                          {/* Class */}
                           <td style={{padding:"9px 13px"}}>
                             <div style={{display:"flex",flexDirection:"column",gap:"2px"}}>
                               <span style={{background:getClassColor(c.propertyClassCode)+"18",border:"1px solid "+getClassColor(c.propertyClassCode)+"40",borderRadius:"4px",padding:"1px 7px",color:getClassColor(c.propertyClassCode),fontSize:"10px",fontWeight:700,whiteSpace:"nowrap",display:"inline-block"}}>{c.propertyClassCode}</span>
@@ -930,11 +869,10 @@ export default function App(){
                           <td style={{padding:"9px 13px",color:T.textMid,fontSize:"12px",maxWidth:"130px",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.buyerName||"—"}</td>
                         </tr>
 
-                        {/* ── EXPANDED DETAIL ── */}
+                        {/* EXPANDED DETAIL */}
                         {!exportMode&&expandedRow===c.id&&(
                           <tr key={c.id+"-exp"} style={{background:c.fmvBadge==="flag"?T.flagBg:c.fmvBadge==="warn"?T.warnBg:T.navyTint,borderBottom:"2px solid "+T.border}}>
                             <td colSpan={12} style={{padding:"20px 24px"}}>
-                              {/* FMV warnings */}
                               {c.fmvFlags&&c.fmvFlags.length>0&&(
                                 <div style={{marginBottom:"16px",display:"flex",flexDirection:"column",gap:"6px"}}>
                                   {c.fmvFlags.map((fl,fi)=>(
@@ -945,14 +883,12 @@ export default function App(){
                                   ))}
                                 </div>
                               )}
-                              {/* Class badge */}
                               <div style={{background:getClassColor(c.propertyClassCode)+"10",border:"1px solid "+getClassColor(c.propertyClassCode)+"30",borderRadius:"5px",padding:"8px 14px",marginBottom:"16px",display:"flex",alignItems:"center",gap:"12px",flexWrap:"wrap"}}>
                                 <span style={{color:getClassColor(c.propertyClassCode),fontWeight:700,fontSize:"13px"}}>Class {c.propertyClassCode}</span>
                                 <span style={{color:T.textFaint}}>·</span>
                                 <span style={{color:T.textMid,fontSize:"12px"}}>{c.propertyClassDesc}</span>
                                 {c.tractCount>1&&<><span style={{color:T.textFaint}}>·</span><span style={{color:T.okGreen,fontSize:"11px",fontWeight:600}}>{c.tractCount} consolidated tracts · acreage & AV summed · price not summed</span></>}
                               </div>
-                              {/* Field grid */}
                               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:"12px 28px",marginBottom:"20px"}}>
                                 {[["SDF ID",c.sdfId],["Parcel",c.allParcels||c.parcel],["Address",c.allAddresses||c.address],["Property Class",c.propertyClassCode+" — "+c.propertyClassDesc],["Tax District",c.taxDistrictName||"(unresolved)"],["Neighborhood",c.neighborhood],["Sale Date",c.saleDate],["Conveyance Date",c.conveyanceDate],["Transfer Date",c.transferDate],["Sale Price",fmt$(c.salePrice)+" (not summed across tracts)"],["Total Acreage",fmtAc(c.acreage)+(c.tractCount>1?" (summed)":"")],["Price / Acre",fmtPAc(c.pricePerAcre)],["AV Land",fmt$(c.avLand)+(c.tractCount>1?" (summed)":"")],["AV Improvement",fmt$(c.avImprovement)+(c.tractCount>1?" (summed)":"")],["AV Total",fmt$(c.avTotal)+(c.tractCount>1?" (summed)":"")],["Valid / Trending",c.validTrending],["Seller",c.sellerName||"—"],["Seller Company",c.sellerCompany||"—"],["Buyer",c.buyerName||"—"],["Buyer Company",c.buyerCompany||"—"],["Preparer",c.preparerName||"—"],["C5 Other Notes",c.c5Other||"—"]].map(([label,val])=>(
                                   <div key={label}>
@@ -962,7 +898,7 @@ export default function App(){
                                 ))}
                               </div>
 
-                              {/* ── NOTES SECTION ── */}
+                              {/* NOTES */}
                               <div style={{borderTop:"1px solid "+T.border,paddingTop:"16px"}}>
                                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"12px"}}>
                                   <div>
@@ -977,14 +913,14 @@ export default function App(){
                                     </button>
                                   )}
                                 </div>
-                                {(notesMap[c.sdfId]||[]).map((note,ni)=>(
-                                  <div key={ni} style={{background:note.verified?T.okBg:T.surface,border:"1px solid "+(note.verified?T.okBorder:T.border),borderRadius:"6px",padding:"12px 16px",marginBottom:"8px",display:"flex",gap:"14px",alignItems:"flex-start"}}>
+                                {(notesMap[c.sdfId]||[]).map((note)=>(
+                                  <div key={note.id} style={{background:note.verified?T.okBg:T.surface,border:"1px solid "+(note.verified?T.okBorder:T.border),borderRadius:"6px",padding:"12px 16px",marginBottom:"8px",display:"flex",gap:"14px",alignItems:"flex-start"}}>
                                     <div style={{flex:1}}>
                                       {note.verified&&<span style={{background:T.okGreen,color:"#fff",fontSize:"9px",letterSpacing:"0.08em",padding:"2px 8px",borderRadius:"3px",marginRight:"8px",fontWeight:700,textTransform:"uppercase"}}>✓ Verified</span>}
                                       <span style={{color:T.text,fontSize:"13px",lineHeight:"1.6"}}>{note.text}</span>
                                       <div style={{marginTop:"5px",color:T.textFaint,fontSize:"11px"}}>{note.author} · {note.timestamp}</div>
                                     </div>
-                                    <button onClick={e=>{e.stopPropagation();deleteNote(c.sdfId,ni);}} style={{background:"none",border:"none",color:"#ccc",cursor:"pointer",fontSize:"18px",lineHeight:1,padding:"0",flexShrink:0}} title="Delete note">×</button>
+                                    <button onClick={e=>{e.stopPropagation();deleteNote(c.sdfId,note.id);}} style={{background:"none",border:"none",color:"#ccc",cursor:"pointer",fontSize:"18px",lineHeight:1,padding:"0",flexShrink:0}} title="Delete note">×</button>
                                   </div>
                                 ))}
                                 {showNoteFor===c.id&&(
@@ -1021,10 +957,9 @@ export default function App(){
           </div>
         )}
 
-        {/* ── STATISTICS TAB ── */}
+        {/* STATISTICS TAB */}
         {activeTab==="stats"&&allComps.length>0&&(
           <div style={{animation:"fadeUp 0.3s ease"}}>
-            {/* FMV summary cards */}
             <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"12px",marginBottom:"20px"}}>
               {[[`✓  ${stats.clean.toLocaleString()}  Arm's Length`,"No FMV concerns detected",T.okGreen,T.okBg,T.okBorder],[`?  ${stats.warned.toLocaleString()}  Verify`,"Potential non-arm's length indicator",T.warnAmber,T.warnBg,T.warnBorder],[`⚠  ${stats.flagged.toLocaleString()}  Flagged`,"Likely non-arm's length transaction",T.flagRed,T.flagBg,T.flagBorder]].map(([label,desc,color,bg,border])=>(
                 <div key={label} style={{background:bg,border:"1px solid "+border,borderRadius:"7px",padding:"18px 20px",boxShadow:"0 1px 4px rgba(20,30,60,0.04)"}}>
@@ -1033,7 +968,6 @@ export default function App(){
                 </div>
               ))}
             </div>
-            {/* Key metrics */}
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:"10px",marginBottom:"20px"}}>
               {[["Total Records",stats.count.toLocaleString(),T.navy],["Multi-Tract",stats.multiTract.toLocaleString(),T.okGreen],["Avg Sale Price",fmt$(Math.round(stats.avgPrice)),T.gold],["Median Sale Price",fmt$(Math.round(stats.medPrice)),T.gold],["Avg Acreage",fmtAc(+stats.avgAcres.toFixed(2)),T.navy],["Avg $/Acre",fmtPAc(Math.round(stats.avgPPAc)),T.okGreen],["Median $/Acre",fmtPAc(Math.round(stats.medPPAc)),T.okGreen],["Total Volume",fmt$(Math.round(stats.totalVolume)),"#7a4a8a"]].map(([label,value,color])=>(
                 <div key={label} style={{background:T.surface,border:"1px solid "+T.border,borderRadius:"7px",padding:"16px 18px",boxShadow:"0 1px 4px rgba(20,30,60,0.04)"}}>
@@ -1042,7 +976,6 @@ export default function App(){
                 </div>
               ))}
             </div>
-            {/* Category breakdown */}
             {topCats.length>0&&(
               <div style={{background:T.surface,border:"1px solid "+T.border,borderRadius:"7px",padding:"20px 22px",marginBottom:"14px",boxShadow:"0 1px 4px rgba(20,30,60,0.04)"}}>
                 <div style={{color:T.textFaint,fontSize:"10px",letterSpacing:"0.1em",textTransform:"uppercase",fontWeight:700,marginBottom:"16px"}}>Property Category Breakdown</div>
@@ -1057,7 +990,6 @@ export default function App(){
                 );})}
               </div>
             )}
-            {/* Acreage distribution */}
             <div style={{background:T.surface,border:"1px solid "+T.border,borderRadius:"7px",padding:"20px 22px",boxShadow:"0 1px 4px rgba(20,30,60,0.04)"}}>
               <div style={{color:T.textFaint,fontSize:"10px",letterSpacing:"0.1em",textTransform:"uppercase",fontWeight:700,marginBottom:"16px"}}>Acreage Distribution</div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:"8px"}}>
@@ -1078,7 +1010,7 @@ export default function App(){
         )}
       </div>
 
-      {/* ── IMPORT MODAL (ADMIN ONLY) ── */}
+      {/* IMPORT MODAL */}
       {showImport&&(
         <div className="modal-overlay" onClick={()=>setShowImport(false)}>
           <div className="modal" onClick={e=>e.stopPropagation()}>
@@ -1102,7 +1034,7 @@ export default function App(){
               }
             </div>
             <p style={{color:T.textLight,fontSize:"11px",lineHeight:"1.7",marginBottom:"16px"}}>
-              Download exports from <a href="https://gatewaysdf.ifionline.org/search" target="_blank" rel="noreferrer" style={{color:T.navy,fontWeight:700}}>gatewaysdf.ifionline.org</a>. Transactions are stored persistently and shared with all users. Duplicate SDF IDs are automatically skipped.
+              Download exports from <a href="https://gatewaysdf.ifionline.org/search" target="_blank" rel="noreferrer" style={{color:T.navy,fontWeight:700}}>gatewaysdf.ifionline.org</a>. Transactions are stored in Supabase and shared with all users. Duplicate SDF IDs are automatically skipped.
             </p>
             {importLog.length>0&&(
               <div>
@@ -1125,7 +1057,7 @@ export default function App(){
         </div>
       )}
 
-      {/* ── SETTINGS MODAL ── */}
+      {/* SETTINGS MODAL */}
       {showSettings&&(
         <div className="modal-overlay" onClick={()=>setShowSettings(false)}>
           <div className="modal" onClick={e=>e.stopPropagation()}>
@@ -1135,31 +1067,31 @@ export default function App(){
             </div>
             <div style={{marginBottom:"24px"}}>
               <label style={{display:"block",color:T.navy,fontSize:"12px",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"6px"}}>Google Maps API Key</label>
-              <p style={{color:T.textLight,fontSize:"12px",lineHeight:"1.6",marginBottom:"10px"}}>Used for Street View photos in MD-26 comp sheets. Enable the Street View Static API in Google Cloud Console. Cost ~$0.007/request.</p>
+              <p style={{color:T.textLight,fontSize:"12px",lineHeight:"1.6",marginBottom:"10px"}}>Used for Street View photos in MD-26 comp sheets. Enable the Street View Static API in Google Cloud Console.</p>
               <input type="text" value={googleApiKey} onChange={e=>setGoogleApiKey(e.target.value)} placeholder="AIzaSy…"
                 style={{width:"100%",background:T.surfaceAlt,border:"1px solid "+T.border,borderRadius:"5px",padding:"10px 13px",color:T.text,fontFamily:"Lato,sans-serif",fontSize:"13px",outline:"none",marginBottom:"12px"}}
               />
-              <button onClick={async()=>{await window.storage.set(settingsKey,JSON.stringify({googleApiKey}));showToast("Settings saved");}}
+              <button onClick={()=>saveSettings(googleApiKey)}
                 style={{background:T.navy,color:"#fff",border:"none",borderRadius:"5px",padding:"9px 20px",fontFamily:"Lato,sans-serif",fontWeight:700,fontSize:"13px",cursor:"pointer"}}>
                 Save Settings
               </button>
             </div>
             <div style={{borderTop:"1px solid "+T.border,paddingTop:"20px"}}>
               <label style={{display:"block",color:T.navy,fontSize:"12px",fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"6px"}}>Indiana Map Parcel Aerial</label>
-              <p style={{color:T.textLight,fontSize:"12px",lineHeight:"1.6"}}>Aerial parcel images are sourced from IndianaMap (maps.indiana.edu) — a public state service requiring no API key. MD-26 exports include a direct parcel viewer link when a Google Maps key is not configured.</p>
+              <p style={{color:T.textLight,fontSize:"12px",lineHeight:"1.6"}}>Aerial parcel images are sourced from IndianaMap (maps.indiana.edu) — a public state service requiring no API key.</p>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── TOAST ── */}
+      {/* TOAST */}
       {toast&&(
         <div style={{position:"fixed",bottom:"24px",right:"24px",background:toast.type==="error"?T.flagBg:T.okBg,border:"1px solid "+(toast.type==="error"?T.flagBorder:T.okBorder),color:toast.type==="error"?T.flagRed:T.okGreen,padding:"12px 18px",borderRadius:"7px",fontFamily:"Lato,sans-serif",fontWeight:600,fontSize:"13px",animation:"fadeUp 0.3s ease",maxWidth:"500px",boxShadow:"0 6px 24px rgba(20,30,60,0.12)",zIndex:999}}>
           {toast.msg}
         </div>
       )}
 
-      {/* ── FOOTER ── */}
+      {/* FOOTER */}
       <footer style={{textAlign:"center",padding:"24px",color:T.textFaint,fontSize:"11px",borderTop:"1px solid "+T.border,marginTop:"32px"}}>
         ParcelComp · Powered by <a href="https://consultcre.com" target="_blank" rel="noreferrer" style={{color:T.navy,fontWeight:700,textDecoration:"none"}}>CRE Consulting</a> · Indiana SDF · DLGF Code List 60 · <a href="https://parcelcomp.com" target="_blank" rel="noreferrer" style={{color:T.navy,fontWeight:700,textDecoration:"none"}}>parcelcomp.com</a>
       </footer>
