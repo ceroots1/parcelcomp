@@ -317,76 +317,9 @@ function consolidateTracts(rows){
 // ─────────────────────────────────────────────────────────────
 //  AI FILTER
 // ─────────────────────────────────────────────────────────────
-const _filterCache=new Map();
-function localFilter(query){
-  const q=query.toLowerCase().trim();
-  const f={propertyCategory:null,propertyClassCode:null,propertyClassDescContains:null,taxDistrictContains:null,minPrice:null,maxPrice:null,minAcreage:null,maxAcreage:null,minPricePerAcre:null,maxPricePerAcre:null,minAVTotal:null,maxAVTotal:null,minAVImprovement:null,hasImprovements:null,sellerContains:null,buyerContains:null,addressContains:null,validTrending:null,saleDateAfter:null,saleDateBefore:null,minTractCount:null,fmvBadge:null,armLengthOnly:null,explanation:""};
-  let matched=false;
-  if(/\bagricult|\bfarm|\bcrop|\bgrain/.test(q)){f.propertyCategory="AGRICULTURAL";matched=true;}
-  else if(/\bcommercial|\bretail|\boffice|\bshopping/.test(q)){f.propertyCategory="COMMERCIAL";matched=true;}
-  else if(/\bindustrial|\bwarehouse|\bmfg|\bmanufact/.test(q)){f.propertyCategory="INDUSTRIAL";matched=true;}
-  else if(/\bresidential|\bdwelling|\bhouse|\bhome/.test(q)){f.propertyCategory="RESIDENTIAL";matched=true;}
-  else if(/\bvacant|\bunimproved/.test(q)){f.hasImprovements=false;matched=true;}
-  else if(/\bimproved/.test(q)){f.hasImprovements=true;matched=true;}
-  if(/arm.{0,5}length|clean sale/.test(q)){f.armLengthOnly=true;matched=true;}
-  if(/flag|not arm|non.arm/.test(q)){f.fmvBadge="flag";matched=true;}
-  if(/warn/.test(q)){f.fmvBadge="warn";matched=true;}
-  const acreRange=q.match(/(\d+\.?\d*)\s*(?:to|-)\s*(\d+\.?\d*)\s*a(?:cres?|c)\b/);
-  const acreBetween=q.match(/between\s*(\d+\.?\d*)\s*and\s*(\d+\.?\d*)\s*a(?:cres?|c)\b/);
-  const acreOver=q.match(/(?:over|more than|>|at least|greater than)\s*(\d+\.?\d*)\s*a(?:cres?|c)\b|(\d+\.?\d*)\+\s*a(?:cres?|c)\b/);
-  const acreUnder=q.match(/(?:under|less than|<|below|fewer than)\s*(\d+\.?\d*)\s*a(?:cres?|c)\b/);
-  if(acreBetween){f.minAcreage=parseFloat(acreBetween[1]);f.maxAcreage=parseFloat(acreBetween[2]);matched=true;}
-  else if(acreRange){f.minAcreage=parseFloat(acreRange[1]);f.maxAcreage=parseFloat(acreRange[2]);matched=true;}
-  else if(acreOver){f.minAcreage=parseFloat(acreOver[1]||acreOver[2]);matched=true;}
-  else if(acreUnder){f.maxAcreage=parseFloat(acreUnder[1]);matched=true;}
-  const parseMoney=(n,suffix)=>{let v=parseFloat(n.replace(/,/g,""));if(/^m/i.test(suffix||""))v*=1000000;else if(/^k/i.test(suffix||""))v*=1000;return v;};
-  const priceOver=q.match(/(?:over|more than|above|>)\s*\$([\d,]+)\s*([km](?:illion)?)?/);
-  const priceUnder=q.match(/(?:under|less than|below|<)\s*\$([\d,]+)\s*([km](?:illion)?)?/);
-  const priceMillOver=q.match(/(?:over|more than|above)\s*(\d+\.?\d*)\s*million/);
-  const priceMillUnder=q.match(/(?:under|less than|below)\s*(\d+\.?\d*)\s*million/);
-  if(priceOver){f.minPrice=parseMoney(priceOver[1],priceOver[2]);matched=true;}
-  if(priceUnder){f.maxPrice=parseMoney(priceUnder[1],priceUnder[2]);matched=true;}
-  if(priceMillOver){f.minPrice=parseFloat(priceMillOver[1])*1000000;matched=true;}
-  if(priceMillUnder){f.maxPrice=parseFloat(priceMillUnder[1])*1000000;matched=true;}
-  const dateAfter=q.match(/(?:after|since|from)\s*(20\d{2})/);
-  const dateBefore=q.match(/(?:before|prior to|until)\s*(20\d{2})/);
-  const dateYear=q.match(/\b(20\d{2})\b(?!\s*(?:sf|sq))/);
-  if(dateAfter){f.saleDateAfter=dateAfter[1]+"-01-01";matched=true;}
-  if(dateBefore){f.saleDateBefore=dateBefore[1]+"-12-31";matched=true;}
-  else if(dateYear&&!dateAfter){f.saleDateAfter=dateYear[1]+"-01-01";f.saleDateBefore=dateYear[1]+"-12-31";matched=true;}
-  if(/multi.?tract|multiple tract/.test(q)){f.minTractCount=2;matched=true;}
-  const buyerMatch=q.match(/buyer(?:\s+(?:is|contains?|named?|=))?\s+([a-z][a-z\s]{2,20})/);
-  const sellerMatch=q.match(/seller(?:\s+(?:is|contains?|named?|=))?\s+([a-z][a-z\s]{2,20})/);
-  if(buyerMatch){f.buyerContains=buyerMatch[1].trim();matched=true;}
-  if(sellerMatch){f.sellerContains=sellerMatch[1].trim();matched=true;}
-  const twnMatch=q.match(/\b([a-z]+)\s+township/);
-  if(twnMatch){f.taxDistrictContains=twnMatch[1];matched=true;}
-  const countyMatch=q.match(/\b([a-z]+)\s+county\b/);
-  if(countyMatch&&countyMatch[1]!=="per"){const countyName=countyMatch[1].toUpperCase();f.taxDistrictContains=(f.taxDistrictContains?f.taxDistrictContains+" ":"")+countyName;matched=true;}
-  const classMatch=q.match(/class\s+(\d{3})/);
-  if(classMatch){f.propertyClassCode=classMatch[1];matched=true;}
-  if(!matched)return null;
-  const parts=[];
-  if(f.propertyCategory)parts.push(f.propertyCategory.toLowerCase());
-  if(f.hasImprovements===false)parts.push("unimproved land");
-  if(f.hasImprovements===true)parts.push("improved properties");
-  if(f.minAcreage||f.maxAcreage)parts.push(`${f.minAcreage||0}–${f.maxAcreage||"∞"} acres`);
-  if(f.minPrice||f.maxPrice)parts.push(`$${(f.minPrice||0).toLocaleString()}–${f.maxPrice?"$"+f.maxPrice.toLocaleString():"∞"}`);
-  if(f.saleDateAfter)parts.push(`from ${f.saleDateAfter.slice(0,4)}`);
-  if(f.saleDateBefore)parts.push(`to ${f.saleDateBefore.slice(0,4)}`);
-  if(f.armLengthOnly)parts.push("arm's length only");
-  if(f.fmvBadge)parts.push(`fmv=${f.fmvBadge}`);
-  if(f.taxDistrictContains)parts.push("district:"+f.taxDistrictContains);
-  if(f.buyerContains)parts.push("buyer:"+f.buyerContains);
-  if(f.sellerContains)parts.push("seller:"+f.sellerContains);
-  f.explanation=`Showing: ${parts.join(", ")}`;
-  return f;
-}
 async function aiFilter(query,comps){
   const cacheKey=query.trim().toLowerCase();
   if(_filterCache.has(cacheKey)){const cached=_filterCache.get(cacheKey);cached.explanation=cached.explanation.replace(" (cached)",")") + " (cached)";return cached;}
-  const localResult=localFilter(query);
-  if(localResult){_filterCache.set(cacheKey,localResult);return localResult;}
   const sample=comps.slice(0,5).map(c=>({parcel:c.parcel,address:c.address,tractCount:c.tractCount,propertyClassCode:c.propertyClassCode,propertyClassDesc:c.propertyClassDesc,propertyCategory:c.propertyCategory,taxDistrictName:c.taxDistrictName,saleDate:c.saleDate,salePrice:c.salePrice,acreage:c.acreage,pricePerAcre:c.pricePerAcre,avTotal:c.avTotal,fmvBadge:c.fmvBadge}));
   const system=`Indiana SDF analyst. KEY FIELDS: saleDate, salePrice, acreage(ACRES), pricePerAcre, propertyClassCode(100s=AG,300s=IND,400s=COMM,500s=RES,600s=EXEMPT,800s=UTIL), propertyCategory, taxDistrictName, avLand, avImprovement, avTotal, tractCount, fmvBadge(flag/warn/null). Respond ONLY valid JSON: {"propertyCategory":null,"propertyClassCode":null,"propertyClassDescContains":null,"taxDistrictContains":null,"minPrice":null,"maxPrice":null,"minAcreage":null,"maxAcreage":null,"minPricePerAcre":null,"maxPricePerAcre":null,"minAVTotal":null,"maxAVTotal":null,"minAVImprovement":null,"hasImprovements":null,"sellerContains":null,"buyerContains":null,"addressContains":null,"saleDateAfter":null,"saleDateBefore":null,"minTractCount":null,"fmvBadge":null,"armLengthOnly":null,"explanation":"one sentence"}`;
   for(let attempt=0;attempt<3;attempt++){
