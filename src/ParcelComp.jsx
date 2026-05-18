@@ -333,11 +333,11 @@ function localFilter(query){
   if(/warn/.test(q)){f.fmvBadge="warn";matched=true;}
   const acreRange=q.match(/(\d+\.?\d*)\s*(?:to|-)\s*(\d+\.?\d*)\s*a(?:cres?|c)\b/);
   const acreBetween=q.match(/between\s*(\d+\.?\d*)\s*and\s*(\d+\.?\d*)\s*a(?:cres?|c)\b/);
-  const acreOver=q.match(/(?:over|more than|>|at least|greater than)\s*(\d+\.?\d*)\s*a(?:cres?|c)\b/);
+  const acreOver=q.match(/(?:over|more than|>|at least|greater than)\s*(\d+\.?\d*)\s*a(?:cres?|c)\b|(\d+\.?\d*)\+\s*a(?:cres?|c)\b/);
   const acreUnder=q.match(/(?:under|less than|<|below|fewer than)\s*(\d+\.?\d*)\s*a(?:cres?|c)\b/);
   if(acreBetween){f.minAcreage=parseFloat(acreBetween[1]);f.maxAcreage=parseFloat(acreBetween[2]);matched=true;}
   else if(acreRange){f.minAcreage=parseFloat(acreRange[1]);f.maxAcreage=parseFloat(acreRange[2]);matched=true;}
-  else if(acreOver){f.minAcreage=parseFloat(acreOver[1]);matched=true;}
+  else if(acreOver){f.minAcreage=parseFloat(acreOver[1]||acreOver[2]);matched=true;}
   else if(acreUnder){f.maxAcreage=parseFloat(acreUnder[1]);matched=true;}
   const parseMoney=(n,suffix)=>{let v=parseFloat(n.replace(/,/g,""));if(/^m/i.test(suffix||""))v*=1000000;else if(/^k/i.test(suffix||""))v*=1000;return v;};
   const priceOver=q.match(/(?:over|more than|above|>)\s*\$([\d,]+)\s*([km](?:illion)?)?/);
