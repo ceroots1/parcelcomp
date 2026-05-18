@@ -317,6 +317,7 @@ function consolidateTracts(rows){
 // ─────────────────────────────────────────────────────────────
 //  AI FILTER
 // ─────────────────────────────────────────────────────────────
+const _filterCache=new Map();
 async function aiFilter(query,comps){
   const cacheKey=query.trim().toLowerCase();
   if(_filterCache.has(cacheKey)){const cached=_filterCache.get(cacheKey);cached.explanation=cached.explanation.replace(" (cached)",")") + " (cached)";return cached;}
