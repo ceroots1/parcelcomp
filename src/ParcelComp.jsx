@@ -282,13 +282,28 @@ async function parseFile(file){
     reader.onerror=reject; reader.readAsArrayBuffer(file);
   });
 }
+function normalizeDate(val) {
+  if (!val) return ""
+  const s = String(val).trim()
+  // Already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10)
+  // M/D/YY or MM/DD/YY — convert to YYYY-MM-DD
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/)
+  if (m) {
+    const year = m[3].length === 2 ? "20" + m[3] : m[3]
+    return `${year}-${m[1].padStart(2,"0")}-${m[2].padStart(2,"0")}`
+  }
+  return s
+}
 function normalizeRow(row){
   const get=(key)=>{if(row[key]!==undefined&&row[key]!==null&&row[key]!=="")return row[key];const k=Object.keys(row).find(k=>k.toLowerCase()===key.toLowerCase());return(k!==undefined&&row[k]!==null&&row[k]!=="")? row[k]:"";};
   const num=v=>{const n=parseFloat(String(v).replace(/[^0-9.-]/g,""));return isNaN(n)?0:n;};
   const parcel=String(get("ParcelNumber")||"").trim();
   const rawDist=String(get("TaxDistrict")||"").trim();
   const classCode=String(get("PropertyClassCode")||"").trim();
-  return{sdfId:String(get("SDF_ID")||"").trim(),parcel,address:String(get("ParcelAddress")||"").trim(),propertyClassCode:classCode,propertyClassDesc:getClassDesc(classCode),propertyCategory:getClassCat(classCode),taxDistrictRaw:rawDist,taxDistrictName:resolveTaxDistrict(rawDist,parcel),neighborhood:String(get("NeighborhoodCode")||"").trim(),saleDate:String(get("SaleDate")||"").trim(),conveyanceDate:String(get("ConvenyanceDate")||"").trim(),transferDate:String(get("TransferDate")||"").trim(),dateReceived:String(get("DateReceived")||"").trim(),salePrice:num(get("SalesPrice")),acreage:num(get("ParcelAcreage")),avLand:num(get("AVLand")),avImprovement:num(get("AVImprovement")),avTotal:num(get("AVTotal")),validTrending:String(get("ValidTrending")||"").trim(),sellerName:String(get("SellerName")||"").trim(),sellerCompany:String(get("SellerCompany")||"").trim(),sellerAddress:String(get("SellerAddress")||"").trim(),buyerName:String(get("BuyerName")||"").trim(),buyerCompany:String(get("BuyerCompany")||"").trim(),buyerAddress:String(get("BuyerAddress")||"").trim(),preparerName:String(get("PreparerName")||"").trim(),preparerCompany:String(get("PreparerCompany")||"").trim(),preparerAddress:String(get("PreparerAddress")||"").trim(),c5Other:String(get("C5_Other")||"").trim()};
+  return{sdfId:String(get("SDF_ID")||"").trim(),parcel,address:String(get("ParcelAddress")||"").trim(),propertyClassCode:classCode,propertyClassDesc:getClassDesc(classCode),propertyCategory:getClassCat(classCode),taxDistrictRaw:rawDist,taxDistrictName:resolveTaxDistrict(rawDist,parcel),neighborhood:String(get("NeighborhoodCode")||"").trim(),saleDate:normalizeDate(get("SaleDate")),
+conveyanceDate:normalizeDate(get("ConvenyanceDate")),
+transferDate:normalizeDate(get("TransferDate")),,dateReceived:String(get("DateReceived")||"").trim(),salePrice:num(get("SalesPrice")),acreage:num(get("ParcelAcreage")),avLand:num(get("AVLand")),avImprovement:num(get("AVImprovement")),avTotal:num(get("AVTotal")),validTrending:String(get("ValidTrending")||"").trim(),sellerName:String(get("SellerName")||"").trim(),sellerCompany:String(get("SellerCompany")||"").trim(),sellerAddress:String(get("SellerAddress")||"").trim(),buyerName:String(get("BuyerName")||"").trim(),buyerCompany:String(get("BuyerCompany")||"").trim(),buyerAddress:String(get("BuyerAddress")||"").trim(),preparerName:String(get("PreparerName")||"").trim(),preparerCompany:String(get("PreparerCompany")||"").trim(),preparerAddress:String(get("PreparerAddress")||"").trim(),c5Other:String(get("C5_Other")||"").trim()};
 }
 function consolidateTracts(rows){
   const groups={},order=[];
