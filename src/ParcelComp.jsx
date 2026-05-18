@@ -326,7 +326,7 @@ async function aiFilter(query,comps){
   for(let attempt=0;attempt<3;attempt++){
     try{
       if(attempt>0)await new Promise(r=>setTimeout(r,[2000,5000,10000][attempt-1]));
-      const resp=await fetch("/api/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:500,system,messages:[{role:"user",content:`Filter: "${query}"\nSample:\n${JSON.stringify(sample)}`}]})});
+      const resp=await fetch("/api/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:500,system,messages:[{role:"user",content:`Filter: "${query}"\nSample:\n${JSON.stringify(sample)}`}]})});
       if(resp.status===429&&attempt<2)continue;
       const data=await resp.json();
       if(data.error&&data.error.type==="rate_limit_error"&&attempt<2)continue;
@@ -631,7 +631,7 @@ export default function App({ session, onLogout }){
     setExportLoading(true);
     try{
       const compData=await Promise.all(selected.map(async comp=>{
-        const aiResp=await fetch("/api/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:500,system:"You are a certified Indiana real estate appraiser completing form MD-26. Respond ONLY with a JSON object, no markdown.",messages:[{role:"user",content:`Generate MD-26 field values for this sale:\n${JSON.stringify({address:comp.address,saleDate:comp.saleDate,salePrice:comp.salePrice,acreage:comp.acreage,pricePerAcre:comp.pricePerAcre,sellerName:comp.sellerName,buyerName:comp.buyerName,propertyClassCode:comp.propertyClassCode,propertyClassDesc:comp.propertyClassDesc,propertyCategory:comp.propertyCategory,taxDistrictName:comp.taxDistrictName,avLand:comp.avLand,avImprovement:comp.avImprovement,fmvBadge:comp.fmvBadge,fmvFlags:comp.fmvFlags?.map(f=>f.reason),c5Other:comp.c5Other})}\nReturn JSON: {"conditionOfSale":"","highestBestUse":"","landDescription":"","dimensionsSize":"","landImprovements":"","availableServices":"","topography":"","drainage":"","qualityOfSoils":"","financing":""}`}]})});
+        const aiResp=await fetch("/api/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:500,system:"You are a certified Indiana real estate appraiser completing form MD-26. Respond ONLY with a JSON object, no markdown.",messages:[{role:"user",content:`Generate MD-26 field values for this sale:\n${JSON.stringify({address:comp.address,saleDate:comp.saleDate,salePrice:comp.salePrice,acreage:comp.acreage,pricePerAcre:comp.pricePerAcre,sellerName:comp.sellerName,buyerName:comp.buyerName,propertyClassCode:comp.propertyClassCode,propertyClassDesc:comp.propertyClassDesc,propertyCategory:comp.propertyCategory,taxDistrictName:comp.taxDistrictName,avLand:comp.avLand,avImprovement:comp.avImprovement,fmvBadge:comp.fmvBadge,fmvFlags:comp.fmvFlags?.map(f=>f.reason),c5Other:comp.c5Other})}\nReturn JSON: {"conditionOfSale":"","highestBestUse":"","landDescription":"","dimensionsSize":"","landImprovements":"","availableServices":"","topography":"","drainage":"","qualityOfSoils":"","financing":""}`}]})});
         const aiData=await aiResp.json();const aiText=(aiData.content||[]).map(b=>b.text||"").join("").trim();
         let aiFields={};try{aiFields=JSON.parse(aiText);}catch{}
         const distMatch=(comp.taxDistrictName||"").match(/^(.+?)\s*((.+?)\s+CO.)$/);
