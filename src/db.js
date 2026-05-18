@@ -313,18 +313,26 @@ function rehydrateComp(comp) {
 // ── TRANSACTIONS ──────────────────────────────────────────────
 
 export async function loadDB() {
-  const { data, error } = await supabase
-    .from('transactions')
-    .select('*')
-    .order('sale_date', { ascending: false })
-
-  if (error) {
-    console.error('loadDB error:', error)
-    return []
+  let allRows = []
+  let from = 0
+  const pageSize = 1000
+  while (true) {
+    const { data, error } = await supabase
+      .from('transactions')
+      .select('*')
+      .order('sale_date', { ascending: false })
+      .range(from, from + pageSize - 1)
+    if (error) {
+      console.error('loadDB error:', error)
+      return []
+    }
+    allRows = allRows.concat(data || [])
+    if (!data || data.length < pageSize) break
+    from += pageSize
   }
 
   // Map DB snake_case → app camelCase, then rehydrate all derived fields
-  return (data || []).map(row => rehydrateComp({
+  return allRows.map(row => rehydrateComp({
     id:                row.id,
     sdfId:             row.sdf_id,
     parcel:            row.parcel,
