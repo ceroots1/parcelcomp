@@ -1,5 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import * as XLSX from "xlsx";
+import React, { useState, useEffect, useCallback, useRef } from "react";import * as XLSX from "xlsx";
 import { loadDB, saveDB, clearDB, loadAllNotes, insertNote, deleteNoteById, loadImportLog, appendImportLog } from './db';
 
 // ─────────────────────────────────────────────────────────────
