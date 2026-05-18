@@ -321,6 +321,10 @@ const _filterCache=new Map();
 async function aiFilter(query,comps){
   const cacheKey=query.trim().toLowerCase();
   if(_filterCache.has(cacheKey)){
+    const cached=_filterCache.get(cacheKey);
+    cached.explanation=(cached.explanation||"Cached result")+" (cached)";
+    return cached;
+  }
   const sample=comps.slice(0,5).map(c=>({parcel:c.parcel,address:c.address,tractCount:c.tractCount,propertyClassCode:c.propertyClassCode,propertyClassDesc:c.propertyClassDesc,propertyCategory:c.propertyCategory,taxDistrictName:c.taxDistrictName,saleDate:c.saleDate,salePrice:c.salePrice,acreage:c.acreage,pricePerAcre:c.pricePerAcre,avTotal:c.avTotal,fmvBadge:c.fmvBadge}));
   const system=`Indiana SDF analyst. KEY FIELDS: saleDate, salePrice, acreage(ACRES), pricePerAcre, propertyClassCode(100s=AG,300s=IND,400s=COMM,500s=RES,600s=EXEMPT,800s=UTIL), propertyCategory, taxDistrictName, avLand, avImprovement, avTotal, tractCount, fmvBadge(flag/warn/null). Respond ONLY valid JSON: {"propertyCategory":null,"propertyClassCode":null,"propertyClassDescContains":null,"taxDistrictContains":null,"minPrice":null,"maxPrice":null,"minAcreage":null,"maxAcreage":null,"minPricePerAcre":null,"maxPricePerAcre":null,"minAVTotal":null,"maxAVTotal":null,"minAVImprovement":null,"hasImprovements":null,"sellerContains":null,"buyerContains":null,"addressContains":null,"saleDateAfter":null,"saleDateBefore":null,"minTractCount":null,"fmvBadge":null,"armLengthOnly":null,"explanation":"one sentence"}`;
   for(let attempt=0;attempt<3;attempt++){
