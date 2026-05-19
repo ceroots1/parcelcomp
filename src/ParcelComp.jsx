@@ -578,6 +578,11 @@ export default function App({ session, onLogout }){
 
   const handleSearch=async()=>{
     if(!query.trim()||!allComps.length)return;
+    if(/^[A-Za-z]\d{2}-\d{4}-\d{7}$/.test(query.trim())){
+      const match=allComps.filter(c=>c.sdfId===query.trim());
+      setFiltered(match);setFilterMeta(null);
+      return;
+    }
     setAiLoading(true);setFilterMeta(null);
     try{const f=await aiFilter(query,allComps);setFiltered(applyFilter(allComps,f));setFilterMeta(f);}
     catch(e){showToast(e.message,"error");}
