@@ -536,7 +536,7 @@ export default function App({ session, onLogout }){
         setFiltered(rows);
         setImportLog(log||[]);
         if(rows.length){
-          const nm=await loadAllNotes(rows.map(r=>r.sdfId));
+          const nm=await loadAllNotes(rows.map(r=>(r.sdfId||'').trim()).filter(Boolean));
           setNotesMap(nm);
         }
         setLoading(false);
