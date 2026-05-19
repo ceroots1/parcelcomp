@@ -549,7 +549,7 @@ export default function App({ session, onLogout }){
     const comp=allComps.find(c=>c.id===expandedRow);
     if(!comp?.sdfId||notesMap[comp.sdfId])return;
     loadAllNotes([comp.sdfId]).then(nm=>setNotesMap(prev=>({...prev,...nm})));
-  },[expandedRow]); // eslint-disable-line react-hooks/exhaustive-deps
+  },[expandedRow]); // eslint-disable-line
 
   // ── IMPORT HANDLER (ADMIN ONLY) ─────────────────────────────
   const handleFiles=useCallback(async(files)=>{
