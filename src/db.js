@@ -313,23 +313,49 @@ function rehydrateComp(comp) {
 // ── TRANSACTIONS ──────────────────────────────────────────────
 
 export async function loadDB() {
-  let allRows = []
-  let from = 0
-  const pageSize = 1000
-  while (true) {
+  const PAGE_SIZE = 1000;
+  let allRows = [];
+  let from = 0;
+  let keepGoing = true;
+
+  while (keepGoing) {
     const { data, error } = await supabase
       .from('transactions')
       .select('*')
-      .order('sale_date', { ascending: false })
-      .range(from, from + pageSize - 1)
-    if (error) {
-      console.error('loadDB error:', error)
-      return []
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (error) throw error;
+
+    if (data && data.length > 0) {
+      allRows = allRows.concat(data);
+      from += PAGE_SIZE;
+      keepGoing = data.length === PAGE_SIZE;
+    } else {
+      keepGoing = false;
     }
-    allRows = allRows.concat(data || [])
-    if (!data || data.length < pageSize) break
-    from += pageSize
   }
+
+  return allRows.map(row => ({
+    parcel:       row.parcel_number   ?? row.parcel ?? '',
+    address:      row.address         ?? '',
+    township:     row.township        ?? '',
+    subdivision:  row.subdivision     ?? '',
+    salePrice:    Number(row.sale_price   ?? row.saleprice   ?? 0),
+    saleDate:     row.sale_date       ?? row.saledate       ?? '',
+    sqft:         Number(row.sqft         ?? row.gla          ?? 0),
+    acreage:      Number(row.acreage      ?? row.acres        ?? 0),
+    style:        row.style           ?? row.prop_style   ?? '',
+    beds:         Number(row.beds         ?? row.bedrooms     ?? 0),
+    baths:        Number(row.baths        ?? row.bathrooms    ?? 0),
+    yearBuilt:    Number(row.year_built   ?? row.yearbuilt    ?? 0),
+    quality:      row.quality         ?? '',
+    condition:    row.condition       ?? '',
+    garage:       row.garage          ?? '',
+    basement:     row.basement        ?? '',
+    neighborhood: row.neighborhood    ?? '',
+    notes:        row.notes           ?? '',
+  }));
+}
 
   // Map DB snake_case → app camelCase, then rehydrate all derived fields
   return allRows.map(row => rehydrateComp({
