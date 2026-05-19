@@ -330,6 +330,13 @@ export async function loadDB(countyPrefix, years) {
   let from = 0
   let keepGoing = true
 
+  // TEMP: log raw parcel values to inspect format
+  const { data: sample, error: sampleError } = await supabase
+    .from('transactions')
+    .select('parcel')
+    .limit(5)
+  console.log('PARCEL FORMAT SAMPLE:', sampleError || (sample || []).map(r => r.parcel))
+
   while (keepGoing) {
     let q = supabase
       .from('transactions')
