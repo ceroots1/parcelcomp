@@ -543,6 +543,14 @@ export default function App({ session, onLogout }){
       });
   },[]);
 
+  // ── LAZY-LOAD NOTES WHEN A ROW IS EXPANDED ──────────────────
+  useEffect(()=>{
+    if(!expandedRow)return;
+    const comp=allComps.find(c=>c.id===expandedRow);
+    if(!comp?.sdfId||notesMap[comp.sdfId])return;
+    loadAllNotes([comp.sdfId]).then(nm=>setNotesMap(prev=>({...prev,...nm})));
+  },[expandedRow]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── IMPORT HANDLER (ADMIN ONLY) ─────────────────────────────
   const handleFiles=useCallback(async(files)=>{
     const file=files[0];if(!file)return;
@@ -786,13 +794,7 @@ export default function App({ session, onLogout }){
                     return(
                       <React.Fragment key={c.id}>
                         <tr className={"row-hover"+(isSelected?" sel-row":"")}
-                          onClick={()=>exportMode?toggleSelect(c.id):const newId = expandedRow===c.id ? null : c.id
-setExpandedRow(newId)
-if(newId && !notesMap[c.sdfId]){
-  loadAllNotes([c.sdfId]).then(nm =>
-    setNotesMap(prev=>({...prev,...nm}))
-  )
-}
+                          onClick={()=>exportMode?toggleSelect(c.id):setExpandedRow(expandedRow===c.id?null:c.id)}
                           style={{background:rowBg,borderBottom:"1px solid "+T.border,transition:"background 0.1s"}}>
                           {exportMode&&<td style={{padding:"9px 12px"}} onClick={e=>{e.stopPropagation();toggleSelect(c.id);}}><input type="checkbox" checked={isSelected} onChange={()=>toggleSelect(c.id)}/></td>}
                           <td style={{padding:"9px 13px",width:"90px"}}>
