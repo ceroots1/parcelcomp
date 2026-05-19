@@ -336,7 +336,7 @@ export async function loadDB() {
   }
 
   return allRows.map(row => ({
-    parcel:       row.parcel_number   ?? row.parcel ?? '',
+    parcel: (row.parcel_number ?? row.parcel ?? '').trim(),
     address:      row.address         ?? '',
     township:     row.township        ?? '',
     subdivision:  row.subdivision     ?? '',
