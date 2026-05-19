@@ -435,11 +435,11 @@ textarea:focus,input:focus{outline:2px solid ${T.gold}!important;outline-offset:
 // ─────────────────────────────────────────────────────────────
 //  HEADER
 // ─────────────────────────────────────────────────────────────
-function Header({allComps,stats,exportMode,setExportMode,clearSelection,selectedIds,exportLoading,exportMD26,setShowImport,setShowSettings,showAdmin,setShowAdmin,daysSinceLastImport,onLogout}){
+function Header({allComps,stats,exportMode,setExportMode,clearSelection,selectedIds,exportLoading,exportMD26,setShowImport,setShowSettings,showAdmin,setShowAdmin,daysSinceLastImport,onLogout,onChangeCounty,countyName}){
   return(
     <header style={{background:T.navy,color:"#fff",height:"58px",display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 28px",position:"sticky",top:0,zIndex:100,boxShadow:"0 2px 12px rgba(20,30,60,0.18)"}}>
       <div style={{display:"flex",alignItems:"center",gap:"20px"}}>
-        <div style={{display:"flex",flexDirection:"column",lineHeight:1,cursor:"default"}} onClick={()=>setShowAdmin(v=>!v)}>
+        <div style={{display:"flex",flexDirection:"column",lineHeight:1,cursor:"pointer"}} onClick={onChangeCounty}>
           <div style={{display:"flex",alignItems:"baseline",gap:"2px"}}>
             <span style={{fontFamily:"Merriweather,serif",fontWeight:700,fontSize:"20px",letterSpacing:"-0.02em",color:"#fff"}}>Parcel</span>
             <span style={{fontFamily:"Merriweather,serif",fontWeight:700,fontSize:"20px",letterSpacing:"-0.02em",color:T.goldLight}}>Comp</span>
@@ -448,6 +448,12 @@ function Header({allComps,stats,exportMode,setExportMode,clearSelection,selected
             {showAdmin?"Admin Mode · ":""}CRE Consulting · Indiana SDF
           </span>
         </div>
+        {countyName&&(
+          <button onClick={onChangeCounty}
+            style={{background:"rgba(255,255,255,0.08)",color:"rgba(255,255,255,0.7)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:"5px",padding:"5px 12px",fontFamily:"Lato,sans-serif",fontSize:"12px",cursor:"pointer",display:"flex",alignItems:"center",gap:"5px"}}>
+            <span style={{fontSize:"10px",opacity:0.7}}>◀</span> {countyName} County
+          </button>
+        )}
         {allComps.length>0&&(
           <div style={{display:"flex",alignItems:"center",gap:"8px",borderLeft:"1px solid rgba(255,255,255,0.15)",paddingLeft:"20px"}}>
             <div className="pulse" style={{width:7,height:7,borderRadius:"50%",background:"#5dba7d"}}/>
@@ -493,7 +499,7 @@ function Header({allComps,stats,exportMode,setExportMode,clearSelection,selected
 // ─────────────────────────────────────────────────────────────
 //  MAIN APP
 // ─────────────────────────────────────────────────────────────
-export default function App({ session, onLogout }){
+export default function App({ session, onLogout, countyPrefix, countyName, selectedYears, onChangeCounty }){
   const [allComps,setAllComps]=useState([]);
   const [filtered,setFiltered]=useState([]);
   const [loading,setLoading]=useState(true);
@@ -530,7 +536,7 @@ export default function App({ session, onLogout }){
 
   // ── LOAD DATA ON MOUNT ──────────────────────────────────────
   useEffect(()=>{
-    Promise.all([loadDB(), loadImportLog()])
+    Promise.all([loadDB(countyPrefix, selectedYears), loadImportLog()])
       .then(async([rows, log])=>{
         setAllComps(rows);
         setFiltered(rows);
@@ -670,7 +676,7 @@ export default function App({ session, onLogout }){
         clearSelection={clearSelection} selectedIds={selectedIds} exportLoading={exportLoading}
         exportMD26={exportMD26} setShowImport={setShowImport} setShowSettings={setShowSettings}
         showAdmin={showAdmin} setShowAdmin={setShowAdmin} daysSinceLastImport={daysSinceLastImport}
-        onLogout={onLogout}/>
+        onLogout={onLogout} onChangeCounty={onChangeCounty} countyName={countyName}/>
 
       <div style={{maxWidth:"1540px",margin:"0 auto",padding:"20px 24px"}}>
 
