@@ -294,17 +294,57 @@ function rehydrateComp(comp) {
 
 // ── TRANSACTIONS ──────────────────────────────────────────────
 
-export async function loadDB() {
+export async function loadCountyYears(countyPrefix) {
   const PAGE_SIZE = 1000
-  let allRows = []
+  let allDates = []
   let from = 0
   let keepGoing = true
 
   while (keepGoing) {
     const { data, error } = await supabase
       .from('transactions')
+      .select('sale_date')
+      .ilike('parcel', countyPrefix + '-%')
+      .not('sale_date', 'is', null)
+      .range(from, from + PAGE_SIZE - 1)
+
+    if (error) { console.error('loadCountyYears error:', error); return [] }
+
+    if (data && data.length > 0) {
+      allDates = allDates.concat(data.map(r => r.sale_date))
+      from += PAGE_SIZE
+      keepGoing = data.length === PAGE_SIZE
+    } else {
+      keepGoing = false
+    }
+  }
+
+  const years = [...new Set(allDates.map(d => d?.substring(0, 4)).filter(Boolean))]
+  return years.sort((a, b) => b - a)
+}
+
+export async function loadDB(countyPrefix, years) {
+  const PAGE_SIZE = 1000
+  let allRows = []
+  let from = 0
+  let keepGoing = true
+
+  while (keepGoing) {
+    let q = supabase
+      .from('transactions')
       .select('*')
       .range(from, from + PAGE_SIZE - 1)
+
+    if (countyPrefix) {
+      q = q.ilike('parcel', countyPrefix + '-%')
+    }
+
+    if (years && years.length > 0) {
+      const yearFilter = years.map(y => `and(sale_date.gte.${y}-01-01,sale_date.lte.${y}-12-31)`).join(',')
+      q = q.or(yearFilter)
+    }
+
+    const { data, error } = await q
 
     if (error) throw error
 
