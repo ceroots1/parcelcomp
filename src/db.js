@@ -335,9 +335,10 @@ export async function loadDB() {
     }
   }
 
-  return allRows.map(row => ({
-    parcel: (row.parcel_number ?? row.parcel ?? '').trim(),
-    address:      row.address         ?? '',
+ return allRows.map(row => ({
+  sdfId:        (row.sdf_id         ?? '').trim(),   // ← ADD THIS LINE
+  parcel:       (row.parcel_number  ?? row.parcel ?? '').trim(),
+  address:      row.address         ?? '',
     township:     row.township        ?? '',
     subdivision:  row.subdivision     ?? '',
     salePrice:    Number(row.sale_price   ?? row.saleprice   ?? 0),
