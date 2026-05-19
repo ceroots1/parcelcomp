@@ -304,7 +304,8 @@ export async function loadCountyYears(countyPrefix) {
     const { data, error } = await supabase
       .from('transactions')
       .select('sale_date')
-      .ilike('parcel', countyPrefix + '-%')
+      .gte('parcel', countyPrefix + '-')
+      .lt('parcel', countyPrefix + '.')
       .not('sale_date', 'is', null)
       .range(from, from + PAGE_SIZE - 1)
 
@@ -336,7 +337,7 @@ export async function loadDB(countyPrefix, years) {
       .range(from, from + PAGE_SIZE - 1)
 
     if (countyPrefix) {
-      q = q.ilike('parcel', countyPrefix + '-%')
+      q = q.gte('parcel', countyPrefix + '-').lt('parcel', countyPrefix + '.')
     }
 
     if (years && years.length > 0) {
@@ -356,6 +357,8 @@ export async function loadDB(countyPrefix, years) {
       keepGoing = false
     }
   }
+
+  console.log(`loadDB: countyPrefix="${countyPrefix}", years=[${(years||[]).join(',')}], total rows returned: ${allRows.length}`)
 
   // Map DB snake_case → app camelCase, then rehydrate all derived fields
   return allRows.map(row => rehydrateComp({
