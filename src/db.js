@@ -304,8 +304,6 @@ export async function loadCountyYears(countyPrefix) {
     const { data, error } = await supabase
       .from('transactions')
       .select('sale_date')
-      .gte('parcel', countyPrefix + '-')
-      .lt('parcel', countyPrefix + '.')
       .not('sale_date', 'is', null)
       .range(from, from + PAGE_SIZE - 1)
 
@@ -330,12 +328,17 @@ export async function loadDB(countyPrefix, years) {
   let from = 0
   let keepGoing = true
 
-  // TEMP: log raw parcel values to inspect format
+  // TEMP DIAGNOSTIC: inspect parcel format and available columns
   const { data: sample, error: sampleError } = await supabase
     .from('transactions')
-    .select('parcel')
+    .select('*')
     .limit(5)
-  console.log('PARCEL FORMAT SAMPLE:', sampleError || (sample || []).map(r => r.parcel))
+  if (sampleError) {
+    console.error('DIAGNOSTIC error:', sampleError)
+  } else {
+    console.log('PARCEL FORMAT (first 5):', (sample || []).map(r => r.parcel))
+    console.log('ALL COLUMNS:', sample?.[0] ? Object.keys(sample[0]) : [])
+  }
 
   while (keepGoing) {
     let q = supabase
@@ -343,9 +346,7 @@ export async function loadDB(countyPrefix, years) {
       .select('*')
       .range(from, from + PAGE_SIZE - 1)
 
-    if (countyPrefix) {
-      q = q.gte('parcel', countyPrefix + '-').lt('parcel', countyPrefix + '.')
-    }
+    // TODO: restore county filter once parcel format is confirmed from DIAGNOSTIC output above
 
     if (years && years.length > 0) {
       const yearFilter = years.map(y => `and(sale_date.gte.${y}-01-01,sale_date.lte.${y}-12-31)`).join(',')
@@ -364,8 +365,6 @@ export async function loadDB(countyPrefix, years) {
       keepGoing = false
     }
   }
-
-  console.log(`loadDB: countyPrefix="${countyPrefix}", years=[${(years||[]).join(',')}], total rows returned: ${allRows.length}`)
 
   // Map DB snake_case → app camelCase, then rehydrate all derived fields
   return allRows.map(row => rehydrateComp({
