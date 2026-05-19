@@ -99,7 +99,7 @@ export default function FilterGate({ children }) {
         <label style={labelStyle}>County</label>
         <select value={county} onChange={handleCountyChange} style={{ ...inputStyle, marginBottom: '20px', cursor: 'pointer' }}>
           <option value="">— Select county —</option>
-          {Object.entries(COUNTY_CODES).map(([code, name]) => (
+          {Object.entries(COUNTY_CODES).sort((a, b) => a[1].localeCompare(b[1])).map(([code, name]) => (
             <option key={code} value={code}>{name} County</option>
           ))}
         </select>
