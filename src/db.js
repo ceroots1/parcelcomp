@@ -1,9 +1,6 @@
 import { supabase } from './supabaseClient'
 
 // ── SHARED HELPERS ────────────────────────────────────────────
-// These are duplicated from ParcelComp.jsx so db.js can
-// rehydrate records on load without a circular dependency.
-
 const COUNTY_CODES = {
   "01":"ADAMS","02":"ALLEN","03":"BARTHOLOMEW","04":"BENTON","05":"BLACKFORD","06":"BOONE","07":"BROWN","08":"CARROLL",
   "09":"CASS","10":"CLARK","11":"CLAY","12":"CLINTON","13":"CRAWFORD","14":"DAVIESS","15":"DEARBORN","16":"DECATUR",
@@ -120,15 +117,11 @@ const TAX_DISTRICTS = {
   "92_001":"RICHLAND TOWNSHIP","92_002":"LARWILL TOWN","92_003":"SMITH TOWNSHIP",
 }
 
-// Resolves a numeric tax district code to a human-readable name
-// Uses parcel prefix to identify county, with full-scan fallback
 function resolveTaxDistrict(rawDistrict, parcelNumber) {
   if (!rawDistrict) return ""
   const raw = String(rawDistrict).trim()
   if (!/^\d+$/.test(raw)) return raw
   const paddedDistrict = raw.padStart(3, "0")
-
-  // Try parcel prefix first
   if (parcelNumber) {
     const prefix = String(parcelNumber).trim().slice(0, 2)
     if (prefix) {
@@ -139,23 +132,16 @@ function resolveTaxDistrict(rawDistrict, parcelNumber) {
       }
     }
   }
-
-  // Parcel prefix did not match — scan all counties
-  // Handles cases where parcel prefix differs from DLGF county code
   const matches = []
   for (const [cc, cname] of Object.entries(COUNTY_CODES)) {
     const key = `${cc}_${paddedDistrict}`
-    if (TAX_DISTRICTS[key]) {
-      matches.push(`${TAX_DISTRICTS[key]} (${cname} CO.)`)
-    }
+    if (TAX_DISTRICTS[key]) matches.push(`${TAX_DISTRICTS[key]} (${cname} CO.)`)
   }
   if (matches.length === 1) return matches[0]
   if (matches.length > 1) return matches.join(" / ")
-
   return `DISTRICT ${raw}`
 }
 
-// Property class helpers
 const PROPERTY_CLASSES = {
   100:"AGRICULTURAL - VACANT LAND",101:"AGRICULTURAL - CASH GRAIN/GENERAL FARM",102:"AGRICULTURAL - LIVESTOCK",
   103:"AGRICULTURAL - DAIRY FARM",104:"AGRICULTURAL - POULTRY FARM",105:"AGRICULTURAL - FRUIT & NUT FARM",
@@ -236,7 +222,6 @@ function isAppraisalImproved(classCode) {
   return false
 }
 
-// FMV helpers needed for rehydration
 const COMMON_SURNAMES = new Set(["smith","johnson","williams","brown","jones","miller","davis","wilson","anderson","taylor","thomas","jackson","white","harris","martin","thompson","moore","young","allen","king","wright","scott","green","baker","adams","nelson","carter","mitchell","roberts","turner","phillips","campbell","parker","evans","edwards","collins","stewart","morris","rogers","reed","cook","morgan","bell","murphy","bailey","cooper","cox","howard","ward","peterson","gray","james","watson","brooks","kelly","sanders","price","ross","henderson"])
 const NAME_NOISE = new Set(["llc","inc","corp","co","trust","rev","revocable","living","family","the","of","and","an","a","ltd","lp","lllp","et","al","ux","vir","jr","sr","ii","iii","iv","trustee","trustees","estate","pr","personal","representative","by","his","her","their","agent"])
 function nameTokens(s) { return (s||"").toLowerCase().split(/[\s,./&-]+/).filter(t=>t.length>1&&!NAME_NOISE.has(t)) }
@@ -283,14 +268,11 @@ function getFMVBadge(flags) {
   return flags.some(f => f.level === "flag") ? "flag" : "warn"
 }
 
-// Full rehydration — calculates all derived fields from stored fields
 function rehydrateComp(comp) {
   const classCode = comp.propertyClassCode || ""
   const parcel    = comp.parcel || ""
   const taxRaw    = comp.taxDistrictRaw || ""
-
   const taxDistrictName = resolveTaxDistrict(taxRaw, parcel)
-
   const rehydrated = {
     ...comp,
     propertyClassDesc:  getClassDesc(classCode),
@@ -313,73 +295,49 @@ function rehydrateComp(comp) {
 // ── TRANSACTIONS ──────────────────────────────────────────────
 
 export async function loadDB() {
-  const PAGE_SIZE = 1000;
-  let allRows = [];
-  let from = 0;
-  let keepGoing = true;
+  const PAGE_SIZE = 1000
+  let allRows = []
+  let from = 0
+  let keepGoing = true
 
   while (keepGoing) {
     const { data, error } = await supabase
       .from('transactions')
       .select('*')
-      .range(from, from + PAGE_SIZE - 1);
+      .range(from, from + PAGE_SIZE - 1)
 
-    if (error) throw error;
+    if (error) throw error
 
     if (data && data.length > 0) {
-      allRows = allRows.concat(data);
-      from += PAGE_SIZE;
-      keepGoing = data.length === PAGE_SIZE;
+      allRows = allRows.concat(data)
+      from += PAGE_SIZE
+      keepGoing = data.length === PAGE_SIZE
     } else {
-      keepGoing = false;
+      keepGoing = false
     }
   }
-
- return allRows.map(row => ({
-  sdfId:        (row.sdf_id         ?? '').trim(),   // ← ADD THIS LINE
-  parcel:       (row.parcel_number  ?? row.parcel ?? '').trim(),
-  address:      row.address         ?? '',
-    township:     row.township        ?? '',
-    subdivision:  row.subdivision     ?? '',
-    salePrice:    Number(row.sale_price   ?? row.saleprice   ?? 0),
-    saleDate:     row.sale_date       ?? row.saledate       ?? '',
-    sqft:         Number(row.sqft         ?? row.gla          ?? 0),
-    acreage:      Number(row.acreage      ?? row.acres        ?? 0),
-    style:        row.style           ?? row.prop_style   ?? '',
-    beds:         Number(row.beds         ?? row.bedrooms     ?? 0),
-    baths:        Number(row.baths        ?? row.bathrooms    ?? 0),
-    yearBuilt:    Number(row.year_built   ?? row.yearbuilt    ?? 0),
-    quality:      row.quality         ?? '',
-    condition:    row.condition       ?? '',
-    garage:       row.garage          ?? '',
-    basement:     row.basement        ?? '',
-    neighborhood: row.neighborhood    ?? '',
-    notes:        row.notes           ?? '',
-  }));
-}
 
   // Map DB snake_case → app camelCase, then rehydrate all derived fields
   return allRows.map(row => rehydrateComp({
     id:                row.id,
-    sdfId:             row.sdf_id,
-    parcel:            row.parcel,
+    sdfId:             (row.sdf_id || '').trim(),
+    parcel:            (row.parcel || '').trim(),
     allParcels:        row.all_parcels,
     address:           row.address,
     propertyClassCode: row.property_class_code,
     taxDistrictRaw:    row.tax_district_raw,
-    // Use stored name if present, rehydrateComp will recalculate if null
     taxDistrictName:   row.tax_district_name || "",
     neighborhood:      row.neighborhood,
     saleDate:          row.sale_date,
     conveyanceDate:    row.conveyance_date,
     transferDate:      row.transfer_date,
     dateReceived:      row.date_received,
-    salePrice:         Number(row.sale_price)      || 0,
-    acreage:           Number(row.acreage)          || 0,
-    pricePerAcre:      Number(row.price_per_acre)   || 0,
-    avLand:            Number(row.av_land)           || 0,
-    avImprovement:     Number(row.av_improvement)   || 0,
-    avTotal:           Number(row.av_total)          || 0,
+    salePrice:         Number(row.sale_price)     || 0,
+    acreage:           Number(row.acreage)         || 0,
+    pricePerAcre:      Number(row.price_per_acre)  || 0,
+    avLand:            Number(row.av_land)          || 0,
+    avImprovement:     Number(row.av_improvement)  || 0,
+    avTotal:           Number(row.av_total)         || 0,
     validTrending:     row.valid_trending,
     sellerName:        row.seller_name,
     sellerCompany:     row.seller_company,
@@ -403,7 +361,6 @@ export async function saveDB(comps) {
     all_parcels:         c.allParcels   || c.parcel,
     address:             c.address,
     property_class_code: c.propertyClassCode,
-    // Save resolved name so future loads have it immediately
     tax_district_raw:    c.taxDistrictRaw,
     tax_district_name:   c.taxDistrictName || resolveTaxDistrict(c.taxDistrictRaw, c.parcel),
     neighborhood:        c.neighborhood,
@@ -431,7 +388,6 @@ export async function saveDB(comps) {
     imported_at:         c.importedAt,
   }))
 
-  // Insert in batches of 500
   for (let i = 0; i < rows.length; i += 500) {
     const chunk = rows.slice(i, i + 500)
     const { error } = await supabase
