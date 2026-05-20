@@ -540,3 +540,22 @@ export async function appendImportLog(entry) {
   })
   if (error) console.error('appendImportLog error:', error)
 }
+
+// ── APP SETTINGS ──────────────────────────────────────────────
+
+export async function loadSetting(key) {
+  const { data, error } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('key', key)
+    .maybeSingle()
+  if (error) { console.error('loadSetting error:', error); return null }
+  return data?.value ?? null
+}
+
+export async function saveSetting(key, value) {
+  const { error } = await supabase
+    .from('app_settings')
+    .upsert({ key, value }, { onConflict: 'key' })
+  if (error) { console.error('saveSetting error:', error); throw error }
+}
