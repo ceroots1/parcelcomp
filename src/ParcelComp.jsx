@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";import * as XLSX from "xlsx";
-import { loadDB, saveDB, clearDB, loadAllNotes, insertNote, deleteNoteById, loadImportLog, appendImportLog } from './db';
+import { loadDB, saveDB, clearDB, loadAllNotes, insertNote, deleteNoteById, loadImportLog, appendImportLog, loadSetting, saveSetting } from './db';
+import { buildMD26Docx } from './buildMD26Docx';
 
 // ─────────────────────────────────────────────────────────────
 //  INDIANA REFERENCE DATA
@@ -549,6 +550,12 @@ export default function App({ session, onLogout, countyPrefix, countyName, selec
       });
   },[]);
 
+  // ── LOAD GOOGLE API KEY FROM SUPABASE WHEN SETTINGS OPENS ───
+  useEffect(()=>{
+    if(!showSettings)return;
+    loadSetting('google_maps_api_key').then(v=>{ if(v)setGoogleApiKey(v); }).catch(()=>{});
+  },[showSettings]); // eslint-disable-line
+
   // ── LAZY-LOAD NOTES WHEN A ROW IS EXPANDED ──────────────────
   useEffect(()=>{
     if(!expandedRow)return;
@@ -632,8 +639,11 @@ export default function App({ session, onLogout, countyPrefix, countyName, selec
   };
 
   const saveSettings=async(key)=>{
-    setGoogleApiKey(key);
-    showToast("Settings saved");
+    try{
+      await saveSetting('google_maps_api_key',key);
+      setGoogleApiKey(key);
+      showToast("Settings saved");
+    }catch(e){showToast("Failed to save settings: "+e.message,"error");}
   };
 
   const daysSinceLastImport=importLog.length?Math.floor((Date.now()-new Date(importLog[0].importedAt).getTime())/(1000*60*60*24)):null;
@@ -650,17 +660,20 @@ export default function App({ session, onLogout, countyPrefix, countyName, selec
     setExportLoading(true);
     try{
       const compData=await Promise.all(selected.map(async comp=>{
-        const aiResp=await fetch("/api/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:500,system:"You are a certified Indiana real estate appraiser completing form MD-26. Respond ONLY with a JSON object, no markdown.",messages:[{role:"user",content:`Generate MD-26 field values for this sale:\n${JSON.stringify({address:comp.address,saleDate:comp.saleDate,salePrice:comp.salePrice,acreage:comp.acreage,pricePerAcre:comp.pricePerAcre,sellerName:comp.sellerName,buyerName:comp.buyerName,propertyClassCode:comp.propertyClassCode,propertyClassDesc:comp.propertyClassDesc,propertyCategory:comp.propertyCategory,taxDistrictName:comp.taxDistrictName,avLand:comp.avLand,avImprovement:comp.avImprovement,fmvBadge:comp.fmvBadge,fmvFlags:comp.fmvFlags?.map(f=>f.reason),c5Other:comp.c5Other})}\nReturn JSON: {"conditionOfSale":"","highestBestUse":"","landDescription":"","dimensionsSize":"","landImprovements":"","availableServices":"","topography":"","drainage":"","qualityOfSoils":"","financing":""}`}]})});
-        const aiData=await aiResp.json();const aiText=(aiData.content||[]).map(b=>b.text||"").join("").trim();
-        let aiFields={};try{aiFields=JSON.parse(aiText);}catch{}
-        const distMatch=(comp.taxDistrictName||"").match(/^(.+?)\s*((.+?)\s+CO.)$/);
-        return{comp,aiFields,township:distMatch?distMatch[1]:(comp.taxDistrictName||""),county:distMatch?distMatch[2]:""};
+        let aiFields={};
+        try{
+          const aiResp=await fetch("/api/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:500,system:"You are a certified Indiana real estate appraiser completing form MD-26. Respond ONLY with a JSON object, no markdown.",messages:[{role:"user",content:`Generate MD-26 field values for this sale:\n${JSON.stringify({address:comp.address,saleDate:comp.saleDate,salePrice:comp.salePrice,acreage:comp.acreage,pricePerAcre:comp.pricePerAcre,sellerName:comp.sellerName,buyerName:comp.buyerName,propertyClassCode:comp.propertyClassCode,propertyClassDesc:comp.propertyClassDesc,propertyCategory:comp.propertyCategory,taxDistrictName:comp.taxDistrictName,avLand:comp.avLand,avImprovement:comp.avImprovement,fmvBadge:comp.fmvBadge,fmvFlags:comp.fmvFlags?.map(f=>f.reason),c5Other:comp.c5Other})}\nReturn JSON: {"conditionOfSale":"","highestBestUse":"","dimensionsSize":"","landImprovements":"","availableServices":"","topography":"","drainage":"","qualityOfSoils":""}`}]})});
+          const aiData=await aiResp.json();
+          const aiText=(aiData.content||[]).map(b=>b.text||"").join("").trim();
+          try{aiFields=JSON.parse(aiText);}catch{}
+        }catch{}
+        return{comp,aiFields};
       }));
-      const html=buildMD26HTML(compData,googleApiKey);
-      const blob=new Blob([html],{type:"text/html"});
-      const url=URL.createObjectURL(blob);
-      Object.assign(document.createElement("a"),{href:url,download:`ParcelComp_MD26_${new Date().toISOString().slice(0,10)}.html`}).click();
-      showToast(`MD-26 exported for ${selected.length} record${selected.length>1?"s":""} — open in browser and print to PDF`);
+      const blob=await buildMD26Docx(compData,notesMap);
+      const dateStr=new Date().toISOString().slice(0,10);
+      const sdfId=(selected[0].sdfId||"export").replace(/[^A-Za-z0-9-]/g,"_");
+      Object.assign(document.createElement("a"),{href:URL.createObjectURL(blob),download:`MD26_${sdfId}_${dateStr}.docx`}).click();
+      showToast(`MD-26 downloaded for ${selected.length} record${selected.length>1?"s":""}`);
     }catch(e){showToast("Export failed: "+e.message,"error");}
     setExportLoading(false);
   };
@@ -1065,25 +1078,3 @@ export default function App({ session, onLogout, countyPrefix, countyName, selec
   );
 }
 
-// ─────────────────────────────────────────────────────────────
-//  MD-26 HTML EXPORT
-// ─────────────────────────────────────────────────────────────
-function buildMD26HTML(compDataArr,googleApiKey){
-  const pages=compDataArr.map(({comp,aiFields:af,township,county})=>{
-    const svApiKey=googleApiKey&&googleApiKey.startsWith("AIza");
-    const svUrl=svApiKey?"https://maps.googleapis.com/maps/api/streetview?size=380x260&location="+encodeURIComponent(comp.address+", Indiana")+"&key="+googleApiKey:null;
-    const parcelNum=(comp.parcel||"").trim();
-    const fmvNote=comp.fmvBadge?"NOT ARM'S LENGTH: "+(comp.fmvFlags||[]).map(g=>g.reason).join("; "):"Appears arm's length";
-    const fmt=n=>n>0?"$"+Number(n).toLocaleString():"—";
-    const fmtAcL=n=>n>0?Number(n).toFixed(2)+" ac":"—";
-    const row=(l1,v1,l2,v2)=>`<tr><td class="label" style="width:130px">${l1}</td><td class="value">${v1||""}</td>${l2!==undefined?`<td class="label">${l2}</td><td class="value">${v2||""}</td>`:""}</tr>`;
-    const photoHtml=svUrl?`<img src="${svUrl}" style="width:100%;height:220px;object-fit:cover;" onerror="this.style.display=none">`:`<div class="no-photo">Street View unavailable<br>Add Google API key in Settings</div>`;
-    const dataTable=[row("Date Sold",comp.saleDate||"","Act. Price",fmt(comp.salePrice||0)),row("Size",fmtAcL(comp.acreage||0),"Per Acre",fmt(comp.pricePerAcre||0)),row("Vendor",(comp.sellerName||"")+(comp.sellerCompany?" / "+comp.sellerCompany:""),"Vendee",(comp.buyerName||"")+(comp.buyerCompany?" / "+comp.buyerCompany:"")),row("Address",comp.address||"","City",comp.taxDistrictName||""),row("Legal Desc",comp.allParcels||comp.parcel||"","Doc #",comp.sdfId||""),row("Consideration",fmt(comp.salePrice||0),"Verified By",comp.preparerName||""),row("Condition",(af||{}).conditionOfSale||fmvNote,"H+B Use",(af||{}).highestBestUse||comp.propertyCategory||"")].join("");
-    const landTable=[row("Dimensions",(af||{}).dimensionsSize||fmtAcL(comp.acreage||0)),row("Improvements",(af||{}).landImprovements||""),row("Services",(af||{}).availableServices||""),row("Topography",(af||{}).topography||"","Drainage",(af||{}).drainage||""),row("Soils",(af||{}).qualityOfSoils||"")].join("");
-    const footer=[row("County",county,"Township",township),row("Type",comp.propertyCategory||"","Comp No.",comp.sdfId||""),row("Appraiser","")].join("");
-    const fmvBanner=comp.fmvBadge?`<div class="fmv-banner ${comp.fmvBadge}">${comp.fmvBadge==="flag"?"NOT ARM'S LENGTH":"VERIFY ARM'S LENGTH"}: ${(comp.fmvFlags||[]).map(g=>g.reason).join(" | ")}</div>`:"";
-    return`<div class="page"><div class="header"><div class="header-title">SALES OF COMPARABLE PROPERTIES</div><div class="header-sub">UNIMPROVED LAND COMPARABLE</div><div class="header-form">MD-26 · ParcelComp · CRE Consulting</div></div><table class="photo-table"><tr><td class="photo-label">Photo View</td><td class="photo-cell">${photoHtml}</td><td class="photo-label">Sketch/Aerial</td><td class="photo-cell"><div class="no-photo">IndianaMap Parcel Aerial<br>Parcel: ${parcelNum||"N/A"}<br>maps.indiana.edu</div></td></tr></table><table class="data-table">${dataTable}</table><div class="section-header">DESCRIPTION of LAND</div><table class="data-table">${landTable}</table><div style="height:60px;border-bottom:1px solid #000;font-size:11px;padding:4px">${comp.fmvFlags&&comp.fmvFlags.length?"FMV Notes: "+(comp.fmvFlags||[]).map(g=>g.reason).join(" | "):""}</div><table class="data-table">${footer}</table>${fmvBanner}</div>`;
-  });
-  const css=`body{font-family:Arial,sans-serif;font-size:11px;margin:0;color:#000}.page{width:7.5in;margin:.5in auto;page-break-after:always;border:1px solid #ccc;padding-bottom:12px}.header{text-align:center;padding:8px 0 4px;border-bottom:2px solid #1a2744}.header-title{font-weight:bold;font-size:14px;color:#1a2744}.header-sub{font-weight:bold;font-size:12px}.header-form{font-size:10px;color:#b8932a;font-style:italic}.photo-table{width:100%;border-collapse:collapse;margin-bottom:8px}.photo-label{width:70px;font-size:9px;vertical-align:top;padding:4px;font-weight:bold}.photo-cell{border:1px solid #000;height:240px;width:calc(50% - 70px);vertical-align:top;overflow:hidden}.no-photo{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;background:#f8f8f8;color:#888;font-size:10px;text-align:center;padding:12px}.data-table{width:100%;border-collapse:collapse;margin-bottom:6px}.label{font-size:10px;padding:2px 6px;vertical-align:bottom;white-space:nowrap;font-weight:bold;color:#333}.value{border-bottom:1px solid #000;font-size:10px;padding:2px 4px;vertical-align:bottom}.section-header{background:#1a2744;color:#fff;font-weight:bold;font-size:10px;padding:3px 8px;margin:6px 0 4px;letter-spacing:.08em}.fmv-banner{margin:8px 0 0;padding:6px 10px;font-size:10px;font-weight:bold;border-radius:3px}.fmv-banner.flag{background:#fff0f0;color:#b53a3a;border:1px solid #e8c4c4}.fmv-banner.warn{background:#fff8f0;color:#b87a1a;border:1px solid #e8d4b0}@media print{.page{border:none;margin:0;width:100%}@page{size:letter;margin:.5in}}`;
-  return`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>ParcelComp MD-26</title><style>${css}</style></head><body>${pages.join("")}<div style="text-align:center;color:#999;font-size:9px;padding:20px">ParcelComp · CRE Consulting · parcelcomp.com · Generated ${new Date().toLocaleDateString()}</div></body></html>`;
-}
