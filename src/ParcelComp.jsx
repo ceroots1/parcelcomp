@@ -667,13 +667,21 @@ export default function App({ session, onLogout, countyPrefix, countyName, selec
           const aiData=await aiResp.json();
           console.log("[MD26] AI response for",comp.sdfId||comp.id,"status:",aiResp.status,"body:",aiData);
           const aiText=(aiData.content||[]).map(b=>b.text||"").join("").trim();
-          try{aiFields=JSON.parse(aiText);}catch(parseErr){console.error("[MD26] AI JSON parse error for",comp.sdfId||comp.id,parseErr,"raw text:",aiText);}
+          const aiClean=aiText.replace(/^```json\s*/,"").replace(/^```\s*/,"").replace(/```\s*$/,"").trim();
+          try{aiFields=JSON.parse(aiClean);}catch(parseErr){console.error("[MD26] AI JSON parse error for",comp.sdfId||comp.id,parseErr,"raw text:",aiText,"cleaned:",aiClean);}
         }catch(aiErr){console.error("[MD26] AI fetch error for",comp.sdfId||comp.id,aiErr);}
         return{comp,aiFields};
       }));
       console.log("[MD26] AI phase complete. compData:",compData.map(d=>({id:d.comp.sdfId||d.comp.id,aiFields:d.aiFields})));
-      const blob=await buildMD26Docx(compData,notesMap);
-      console.log("[MD26] buildMD26Docx returned:",blob,"type:",blob?.type,"size:",blob?.size);
+      console.log("[MD26] Full compData before buildMD26Docx:",JSON.stringify(compData,null,2));
+      let blob;
+      try{
+        blob=await buildMD26Docx(compData,notesMap);
+        console.log("[MD26] buildMD26Docx returned:",blob,"type:",blob?.type,"size:",blob?.size);
+      }catch(docxErr){
+        console.error("[MD26] buildMD26Docx threw:",docxErr);
+        throw docxErr;
+      }
       const dateStr=new Date().toISOString().slice(0,10);
       const sdfId=(selected[0].sdfId||"export").replace(/[^A-Za-z0-9-]/g,"_");
       const url=URL.createObjectURL(blob);
