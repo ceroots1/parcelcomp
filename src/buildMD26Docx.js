@@ -15,6 +15,9 @@ const LB  = { style: BorderStyle.SINGLE, size: 6,  color: '000000', space: 1 }
 const DB  = { style: BorderStyle.SINGLE, size: 4,  color: 'CCCCCC', space: 0 }
 const TLB = { style: BorderStyle.SINGLE, size: 16, color: '1A2744', space: 1 }
 
+// Safe string coercion — never returns undefined/null/non-string
+const s = v => (v === null || v === undefined) ? '' : String(v)
+
 // ── Helpers ────────────────────────────────────────────────────
 
 // Label (tiny bold gray) + value (bottom-underlined) cell for borderless row tables
@@ -26,12 +29,12 @@ function lv(label, value, width, borderRight = false) {
     children: [
       new Paragraph({
         spacing: { before: 0, after: 0 },
-        children: [new TextRun({ text: label, bold: true, size: 14, color: '777777' })],
+        children: [new TextRun({ text: s(label), bold: true, size: 14, color: '777777' })],
       }),
       new Paragraph({
         spacing: { before: 0, after: 30 },
         border: { bottom: LB },
-        children: [new TextRun({ text: String(value ?? ''), size: 20 })],
+        children: [new TextRun({ text: s(value), size: 20 })],
       }),
     ],
   })
@@ -46,12 +49,12 @@ function lvB(label, value, width) {
     children: [
       new Paragraph({
         spacing: { before: 0, after: 0 },
-        children: [new TextRun({ text: label, bold: true, size: 14, color: '777777' })],
+        children: [new TextRun({ text: s(label), bold: true, size: 14, color: '777777' })],
       }),
       new Paragraph({
         spacing: { before: 0, after: 30 },
         border: { bottom: LB },
-        children: [new TextRun({ text: String(value ?? ''), size: 20 })],
+        children: [new TextRun({ text: s(value), size: 20 })],
       }),
     ],
   })
@@ -72,7 +75,7 @@ function secHdr(text) {
   return new Paragraph({
     spacing: { before: 100, after: 60 },
     shading: { type: ShadingType.SOLID, color: '1A2744', fill: '1A2744' },
-    children: [new TextRun({ text, bold: true, size: 18, color: 'FFFFFF', allCaps: true })],
+    children: [new TextRun({ text: s(text), bold: true, size: 18, color: 'FFFFFF', allCaps: true })],
   })
 }
 
@@ -81,34 +84,45 @@ function secHdr(text) {
 export async function buildMD26Docx(compDataArr, notesMap = {}) {
   const children = []
 
-  compDataArr.forEach(({ comp, aiFields: af = {} }, idx) => {
+  compDataArr.forEach(({ comp, aiFields }, idx) => {
+    // Defensive: aiFields may be undefined/null if the AI call failed entirely
+    const af = (aiFields && typeof aiFields === 'object' && !Array.isArray(aiFields)) ? aiFields : {}
 
     // ── Derived values ──────────────────────────────────────
     const countyM  = (comp.taxDistrictName || '').match(/(\w+(?:\s+\w+)?)\s+CO\.?/i)
-    const county   = countyM ? countyM[1].trim() : ''
+    const county   = countyM ? s(countyM[1]).trim() : ''
     const tshipM   = (comp.taxDistrictName || '').match(/^(.+?)\s+\w+(?:\s+\w+)?\s+CO\.?/i)
-    const township = tshipM ? tshipM[1].trim() : (comp.taxDistrictName || '')
+    const township = tshipM ? s(tshipM[1]).trim() : s(comp.taxDistrictName)
 
-    const addrParts = (comp.address || '').split(',')
+    const addrParts = s(comp.address).split(',')
     const city = addrParts.length >= 2
       ? addrParts[1].replace(/\s+IN\s*\d.*/i, '').trim()
       : ''
 
-    const fmt$  = n => n > 0 ? '$' + Number(n).toLocaleString('en-US') : ''
-    const fmtAc = n => n > 0 ? Number(n).toFixed(2) + ' ac' : ''
+    const fmt$  = n => (n != null && Number(n) > 0) ? '$' + Number(n).toLocaleString('en-US') : ''
+    const fmtAc = n => (n != null && Number(n) > 0) ? Number(n).toFixed(2) + ' ac' : ''
+
+    // fmvFlags reasons — guard each item's reason field
+    const flagReasons = Array.isArray(comp.fmvFlags)
+      ? comp.fmvFlags.map(f => s(f && f.reason)).filter(Boolean).join('; ')
+      : ''
 
     const condSale = comp.fmvBadge === 'flag'
-      ? "NOT ARM'S LENGTH: " + (comp.fmvFlags || []).map(f => f.reason).join('; ')
+      ? ("NOT ARM'S LENGTH" + (flagReasons ? ': ' + flagReasons : ''))
       : comp.fmvBadge === 'warn'
-        ? 'VERIFY: ' + (comp.fmvFlags || []).map(f => f.reason).join('; ')
-        : af.conditionOfSale || "Arm's Length"
+        ? ('VERIFY' + (flagReasons ? ': ' + flagReasons : ''))
+        : s(af.conditionOfSale) || "Arm's Length"
 
-    const vendor = [comp.sellerName, comp.sellerCompany].filter(Boolean).join(' / ')
-    const vendee = [comp.buyerName, comp.buyerCompany].filter(Boolean).join(' / ')
+    const vendor = [comp.sellerName, comp.sellerCompany]
+      .filter(Boolean).map(s).join(' / ')
+    const vendee = [comp.buyerName, comp.buyerCompany]
+      .filter(Boolean).map(s).join(' / ')
 
-    const notes       = notesMap[comp.sdfId] || []
+    // Notes — guard against non-array values from notesMap
+    const rawNotes = notesMap[comp.sdfId]
+    const notes = Array.isArray(rawNotes) ? rawNotes : []
     const commentLines = notes.length > 0
-      ? notes.map(n => `[${n.author} – ${n.timestamp}]: ${n.text}`)
+      ? notes.map(n => `[${s(n && n.author)} – ${s(n && n.timestamp)}]: ${s(n && n.text)}`)
       : [' ']
 
     // ── Column widths (twips) ───────────────────────────────
@@ -174,10 +188,10 @@ export async function buildMD26Docx(compDataArr, notesMap = {}) {
     // ── Transaction fields ──────────────────────────────────
     // Row 1: Date Sold | Act. Price | Size | /Per Acre
     children.push(rowTable([
-      lv('Date Sold',  comp.saleDate || '',     Q, true),
-      lv('Act. Price', fmt$(comp.salePrice),    Q, true),
-      lv('Size',       fmtAc(comp.acreage),     Q, true),
-      lv('/Per Acre',  fmt$(comp.pricePerAcre), Q, false),
+      lv('Date Sold',  s(comp.saleDate),         Q, true),
+      lv('Act. Price', fmt$(comp.salePrice),      Q, true),
+      lv('Size',       fmtAc(comp.acreage),       Q, true),
+      lv('/Per Acre',  fmt$(comp.pricePerAcre),   Q, false),
     ]))
     // Row 2: Vendor | Vendee
     children.push(rowTable([
@@ -186,52 +200,54 @@ export async function buildMD26Docx(compDataArr, notesMap = {}) {
     ]))
     // Row 3: Property Address | City
     children.push(rowTable([
-      lv('Property Address', comp.address || '', H, true),
-      lv('City',             city,               H, false),
+      lv('Property Address', s(comp.address), H, true),
+      lv('City',             city,            H, false),
     ]))
     // Row 4: Legal Description | Document #
     children.push(rowTable([
-      lv('Legal Description', comp.allParcels || comp.parcel || '', H, true),
-      lv('Document #',        comp.sdfId || '',                     H, false),
+      lv('Legal Description', s(comp.allParcels || comp.parcel), H, true),
+      lv('Document #',        s(comp.sdfId),                     H, false),
     ]))
     // Row 5: Rec. Consideration | Sale Info Verified By | Date Ver.
     children.push(rowTable([
       lv('Rec. Consideration',    fmt$(comp.salePrice),    R5A, true),
-      lv('Sale Info Verified By', comp.preparerName || '', R5B, true),
+      lv('Sale Info Verified By', s(comp.preparerName),   R5B, true),
       lv('Date Ver.',             '',                      R5C, false),
     ]))
     // Row 6: Financing | Zoning
     children.push(rowTable([
-      lv('Financing', '',                           H, true),
-      lv('Zoning',    comp.propertyClassDesc || '', H, false),
+      lv('Financing', '',                            H, true),
+      lv('Zoning',    s(comp.propertyClassDesc),    H, false),
     ]))
     // Row 7: Condition of Sale | Highest & Best Use
     children.push(rowTable([
-      lv('Condition of Sale',  condSale,                                        H, true),
-      lv('Highest & Best Use', af.highestBestUse || comp.propertyCategory || '', H, false),
+      lv('Condition of Sale',  condSale,                                                          H, true),
+      lv('Highest & Best Use', s(af.highestBestUse) || s(comp.propertyCategory) || '', H, false),
     ]))
 
     // ── DESCRIPTION OF LAND ────────────────────────────────
     children.push(secHdr('DESCRIPTION OF LAND'))
 
     children.push(rowTable([
-      lv('Dimensions / Size', af.dimensionsSize || fmtAc(comp.acreage), PW, false),
+      lv('Dimensions / Size',
+        s(af.dimensionsSize) || fmtAc(comp.acreage),
+        PW, false),
     ]))
     children.push(rowTable([
       lv('Land Improvements',
-        af.landImprovements ||
+        s(af.landImprovements) ||
           'Drives  |  Walks  |  Landscaping  |  Trees  |  Well  |  Septic  |  Fence  |  Pond',
         PW, false),
     ]))
     children.push(rowTable([
       lv('Available Services',
-        af.availableServices || 'Road  |  City Water  |  City Sewer  |  Gas  |  Other',
+        s(af.availableServices) || 'Road  |  City Water  |  City Sewer  |  Gas  |  Other',
         PW, false),
     ]))
     children.push(rowTable([
-      lv('Land Topography', af.topography || '',     T,  true),
-      lv('Drainage',        af.drainage || '',       T,  true),
-      lv('Quality of Soils',af.qualityOfSoils || '', T3, false),
+      lv('Land Topography', s(af.topography),     T,  true),
+      lv('Drainage',        s(af.drainage),       T,  true),
+      lv('Quality of Soils',s(af.qualityOfSoils), T3, false),
     ]))
 
     // Comments (with saved notes)
@@ -253,7 +269,7 @@ export async function buildMD26Docx(compDataArr, notesMap = {}) {
             ...commentLines.map(line => new Paragraph({
               spacing: { before: 0, after: 30 },
               border: { bottom: LB },
-              children: [new TextRun({ text: line, size: 20 })],
+              children: [new TextRun({ text: s(line) || ' ', size: 20 })],
             })),
           ],
         })],
@@ -261,7 +277,7 @@ export async function buildMD26Docx(compDataArr, notesMap = {}) {
     }))
 
     // ── Footer table ───────────────────────────────────────
-    children.push(new Paragraph({ spacing: { before: 80, after: 0 }, children: [new TextRun('')] }))
+    children.push(new Paragraph({ spacing: { before: 80, after: 0 }, children: [new TextRun({ text: '' })] }))
 
     const FT  = Math.floor(PW / 3)
     const FT3 = PW - FT - FT
@@ -272,19 +288,19 @@ export async function buildMD26Docx(compDataArr, notesMap = {}) {
       borders: { top: OB, bottom: OB, left: OB, right: OB, insideH: IB, insideV: IB },
       rows: [
         new TableRow({ cells: [
-          lvB("Appraiser's Name",  '',                        FT),
-          lvB('Broker No.',        '',                        FT),
-          lvB('Appraisal Lic. No.','',                        FT3),
+          lvB("Appraiser's Name",  '',                          FT),
+          lvB('Broker No.',        '',                          FT),
+          lvB('Appraisal Lic. No.','',                          FT3),
         ]}),
         new TableRow({ cells: [
-          lvB('County',            county,                    FT),
-          lvB('Township',          township,                  FT),
-          lvB('Type Property',     comp.propertyCategory || '',FT3),
+          lvB('County',            county,                      FT),
+          lvB('Township',          township,                    FT),
+          lvB('Type Property',     s(comp.propertyCategory),   FT3),
         ]}),
         new TableRow({ cells: [
-          lvB('Project No.',       '',                        FT),
-          lvB('Insp. Date',        '',                        FT),
-          lvB('Comp. No.',         comp.sdfId || '',          FT3),
+          lvB('Project No.',       '',                          FT),
+          lvB('Insp. Date',        '',                          FT),
+          lvB('Comp. No.',         s(comp.sdfId),               FT3),
         ]}),
       ],
     }))
