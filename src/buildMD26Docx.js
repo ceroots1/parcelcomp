@@ -66,7 +66,7 @@ function rowTable(cells) {
     width: { size: PW, type: WidthType.DXA },
     layout: TableLayoutType.FIXED,
     borders: { top: NB, bottom: NB, left: NB, right: NB, insideH: NB, insideV: NB },
-    rows: [new TableRow({ cells })],
+    rows: [new TableRow({ children: cells })],
   })
 }
 
@@ -152,7 +152,7 @@ export async function buildMD26Docx(compDataArr, notesMap = {}) {
       borders: { top: OB, bottom: OB, left: OB, right: OB, insideV: OB, insideH: NB },
       rows: [new TableRow({
         height: { value: 3600, rule: HeightRule.ATLEAST },
-        cells: [
+        children: [
           new TableCell({
             width: { size: H, type: WidthType.DXA },
             children: [
@@ -257,7 +257,7 @@ export async function buildMD26Docx(compDataArr, notesMap = {}) {
       borders: { top: NB, bottom: NB, left: NB, right: NB, insideH: NB, insideV: NB },
       rows: [new TableRow({
         height: { value: 1440, rule: HeightRule.ATLEAST },
-        cells: [new TableCell({
+        children: [new TableCell({
           width: { size: PW, type: WidthType.DXA },
           margins: { top: 60, bottom: 40, left: 90, right: 90 },
           borders: { top: NB, bottom: NB, left: NB, right: NB },
@@ -287,17 +287,17 @@ export async function buildMD26Docx(compDataArr, notesMap = {}) {
       layout: TableLayoutType.FIXED,
       borders: { top: OB, bottom: OB, left: OB, right: OB, insideH: IB, insideV: IB },
       rows: [
-        new TableRow({ cells: [
+        new TableRow({ children: [
           lvB("Appraiser's Name",  '',                          FT),
           lvB('Broker No.',        '',                          FT),
           lvB('Appraisal Lic. No.','',                          FT3),
         ]}),
-        new TableRow({ cells: [
+        new TableRow({ children: [
           lvB('County',            county,                      FT),
           lvB('Township',          township,                    FT),
           lvB('Type Property',     s(comp.propertyCategory),   FT3),
         ]}),
-        new TableRow({ cells: [
+        new TableRow({ children: [
           lvB('Project No.',       '',                          FT),
           lvB('Insp. Date',        '',                          FT),
           lvB('Comp. No.',         s(comp.sdfId),               FT3),
