@@ -659,22 +659,32 @@ export default function App({ session, onLogout, countyPrefix, countyName, selec
     if(!selected.length){showToast("Select at least one record to export","error");return;}
     setExportLoading(true);
     try{
+      console.log("[MD26] Starting export for",selected.length,"record(s):",selected.map(c=>c.sdfId||c.id));
       const compData=await Promise.all(selected.map(async comp=>{
         let aiFields={};
         try{
           const aiResp=await fetch("/api/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:500,system:"You are a certified Indiana real estate appraiser completing form MD-26. Respond ONLY with a JSON object, no markdown.",messages:[{role:"user",content:`Generate MD-26 field values for this sale:\n${JSON.stringify({address:comp.address,saleDate:comp.saleDate,salePrice:comp.salePrice,acreage:comp.acreage,pricePerAcre:comp.pricePerAcre,sellerName:comp.sellerName,buyerName:comp.buyerName,propertyClassCode:comp.propertyClassCode,propertyClassDesc:comp.propertyClassDesc,propertyCategory:comp.propertyCategory,taxDistrictName:comp.taxDistrictName,avLand:comp.avLand,avImprovement:comp.avImprovement,fmvBadge:comp.fmvBadge,fmvFlags:comp.fmvFlags?.map(f=>f.reason),c5Other:comp.c5Other})}\nReturn JSON: {"conditionOfSale":"","highestBestUse":"","dimensionsSize":"","landImprovements":"","availableServices":"","topography":"","drainage":"","qualityOfSoils":""}`}]})});
           const aiData=await aiResp.json();
+          console.log("[MD26] AI response for",comp.sdfId||comp.id,"status:",aiResp.status,"body:",aiData);
           const aiText=(aiData.content||[]).map(b=>b.text||"").join("").trim();
-          try{aiFields=JSON.parse(aiText);}catch{}
-        }catch{}
+          try{aiFields=JSON.parse(aiText);}catch(parseErr){console.error("[MD26] AI JSON parse error for",comp.sdfId||comp.id,parseErr,"raw text:",aiText);}
+        }catch(aiErr){console.error("[MD26] AI fetch error for",comp.sdfId||comp.id,aiErr);}
         return{comp,aiFields};
       }));
+      console.log("[MD26] AI phase complete. compData:",compData.map(d=>({id:d.comp.sdfId||d.comp.id,aiFields:d.aiFields})));
       const blob=await buildMD26Docx(compData,notesMap);
+      console.log("[MD26] buildMD26Docx returned:",blob,"type:",blob?.type,"size:",blob?.size);
       const dateStr=new Date().toISOString().slice(0,10);
       const sdfId=(selected[0].sdfId||"export").replace(/[^A-Za-z0-9-]/g,"_");
-      Object.assign(document.createElement("a"),{href:URL.createObjectURL(blob),download:`MD26_${sdfId}_${dateStr}.docx`}).click();
+      const url=URL.createObjectURL(blob);
+      const filename=`MD26_${sdfId}_${dateStr}.docx`;
+      console.log("[MD26] Triggering download — url:",url,"filename:",filename);
+      Object.assign(document.createElement("a"),{href:url,download:filename}).click();
       showToast(`MD-26 downloaded for ${selected.length} record${selected.length>1?"s":""}`);
-    }catch(e){showToast("Export failed: "+e.message,"error");}
+    }catch(e){
+      console.error("[MD26] Export failed:",e);
+      showToast("Export failed: "+e.message,"error");
+    }
     setExportLoading(false);
   };
 
